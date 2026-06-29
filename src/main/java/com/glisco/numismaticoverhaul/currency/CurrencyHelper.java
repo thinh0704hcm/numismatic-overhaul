@@ -3,10 +3,10 @@ package com.glisco.numismaticoverhaul.currency;
 import com.glisco.numismaticoverhaul.item.*;
 import io.wispforest.endec.Endec;
 import io.wispforest.endec.impl.KeyedEndec;
-import net.minecraft.component.type.ContainerComponent;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.village.TradedItem;
+import net.minecraft.world.item.component.ItemContainerContents;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.trading.ItemCost;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,24 +21,24 @@ public class CurrencyHelper {
      * @param remove Whether to remove all coins from the player in the process
      * @return The amount of currency contained in the player's inventory
      */
-    public static long getMoneyInInventory(PlayerEntity player, boolean remove) {
+    public static long getMoneyInInventory(Player player, boolean remove) {
 
         long value = 0;
 
-        for (int i = 0; i < player.getInventory().size(); i++) {
-            ItemStack stack = player.getInventory().getStack(i);
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = player.getInventory().getItem(i);
             if (!(stack.getItem() instanceof CurrencyItem currencyItem)) continue;
 
             value += currencyItem.getValue(stack);
 
-            if (remove) player.getInventory().removeOne(stack);
+            if (remove) player.getInventory().removeItem(stack);
         }
 
         return value;
     }
 
-    public static List<Long> getFromContainer(ContainerComponent component) {
-        var items = component.stream().toList();
+    public static List<Long> getFromContainer(ItemContainerContents component) {
+        List<ItemStack> items = component.nonEmptyItemCopyStream().toList();
         int value = getValue(items);
         var moneyBagComponent = MoneyBagComponent.of(value);
         return List.of(moneyBagComponent.bronze(), moneyBagComponent.silver(), moneyBagComponent.gold());
@@ -53,13 +53,13 @@ public class CurrencyHelper {
         }).sum();
     }
 
-    public static void offerAsCoins(PlayerEntity player, long value) {
+    public static void offerAsCoins(Player player, long value) {
         for (ItemStack itemStack : CurrencyConverter.getAsValidStacks(value)) {
-            player.getInventory().offerOrDrop(itemStack);
+            player.getInventory().add(itemStack);
         }
     }
 
-    public static boolean deductFromInventory(PlayerEntity player, long value) {
+    public static boolean deductFromInventory(Player player, long value) {
         long presentInInventory = getMoneyInInventory(player, false);
         if (presentInInventory < value) return false;
 
@@ -103,9 +103,9 @@ public class CurrencyHelper {
         return CurrencyConverter.getAsItemStackList(CurrencyResolver.combineValues(values)).get(0);
     }
 
-    public static TradedItem getClosestTradeItem(long price) {
+    public static ItemCost getClosestTradeItem(long price) {
         var closestPriceStack = CurrencyHelper.getClosest(price);
-        return new TradedItem(closestPriceStack.getItem(), closestPriceStack.getCount());
+        return new ItemCost(closestPriceStack.getItem(), closestPriceStack.getCount());
     }
 
 }

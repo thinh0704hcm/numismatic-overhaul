@@ -6,76 +6,76 @@ import com.glisco.numismaticoverhaul.currency.CurrencyComponent;
 import com.glisco.numismaticoverhaul.currency.CurrencyHelper;
 import com.glisco.numismaticoverhaul.item.CoinItem;
 import com.glisco.numismaticoverhaul.item.NumismaticOverhaulItems;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.MerchantScreenHandler;
-import net.minecraft.village.Merchant;
-import net.minecraft.village.TradedItem;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.inventory.MerchantMenu;
+import net.minecraft.world.item.trading.Merchant;
+import net.minecraft.world.item.trading.MerchantOffer;
+import net.minecraft.world.item.trading.MerchantOffers;
 import org.spongepowered.asm.mixin.*;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(MerchantScreenHandler.class)
+@Mixin(MerchantMenu.class)
 public class MerchantScreenHandlerMixin {
 
     @Shadow
     @Final
-    private Merchant merchant;
+    private Merchant trader;
 
-    //Autofill with coins from the player's purse if the trade requires it
-    //Injected at TAIL to let normal autofill run and fill up if anything is missing
-    @Inject(method = "autofill", at = @At("TAIL"))
-    public void autofillOverride(int slot, TradedItem tradedItem, CallbackInfo ci) {
-        var stack = tradedItem.itemStack();
-        MerchantScreenHandler handler = (MerchantScreenHandler) (Object) this;
-        CurrencyComponent playerBalance = ModComponents.CURRENCY.get(((PlayerInventory) handler.getSlot(3).inventory).player);
 
-        if (stack.getItem() instanceof CoinItem) {
-            numismatic$autofillWithCoins(slot, stack, handler, playerBalance);
-        } else if (stack.getItem() == NumismaticOverhaulItems.MONEY_BAG) {
-            numismatic$autofillWithMoneyBag(slot, stack, handler, playerBalance);
+
+    // Autofill with coins from the player's purse when trying to move items
+    // Injected at TAIL of tryMoveItems(int)
+    @Inject(method = "tryMoveItems", at = @At("TAIL"))
+    public void autofillOverride(int slotIndex, CallbackInfo ci) {
+        MerchantMenu handler = (MerchantMenu) (Object) this;
+        Player player = this.trader.getTradingPlayer();
+        if (player == null) return;
+
+        CurrencyComponent playerBalance = ModComponents.get(player);
+        MerchantOffers offers = handler.getOffers();
+        if (slotIndex < 0 || slotIndex >= offers.size()) return;
+
+        MerchantOffer offer = offers.get(slotIndex);
+        // Check if the payment slot has coins from this mod
+        ItemStack paymentStack = handler.getSlot(0).getItem();
+        if (paymentStack.isEmpty()) return;
+
+        if (paymentStack.getItem() instanceof CoinItem coinItem) {
+            numismatic$autofillWithCoins(handler, playerBalance, coinItem, paymentStack.getCount());
+        } else if (paymentStack.getItem() == NumismaticOverhaulItems.MONEY_BAG) {
+            numismatic$autofillWithMoneyBag(handler, player, playerBalance, paymentStack);
         }
 
-        // TODO: Review: Removed if (slot == 1) check as it was causing coins to not actually be removed the purse when trading
         playerBalance.commitTransactions();
     }
 
     @Unique
-    private static void numismatic$autofillWithCoins(int slot, ItemStack stack, MerchantScreenHandler handler, CurrencyComponent playerBalance) {
-        //See how much is required and how much was already autofilled
-        long requiredCurrency = ((CoinItem) stack.getItem()).currency.getRawValue(stack.getCount());
-        long presentCurrency = ((CoinItem) stack.getItem()).currency.getRawValue(handler.getSlot(slot).getStack().getCount());
+    private void numismatic$autofillWithCoins(MerchantMenu handler, CurrencyComponent playerBalance, CoinItem coinItem, int presentCount) {
+        // Check the current offer's payment requirement
+        MerchantOffer offer = handler.getOffers().get(0);
+        long requiredCurrency = coinItem.currency.getRawValue(offer.getBaseCostA().getCount());
+        long presentCurrency = coinItem.currency.getRawValue(presentCount);
 
         if (requiredCurrency <= presentCurrency) return;
 
-        //Find out how much we still need to fill
         long neededCurrency = requiredCurrency - presentCurrency;
-
-        //Is that even possible?
-        if (!(neededCurrency <= playerBalance.getValue())) return;
+        if (neededCurrency > playerBalance.getValue()) return;
 
         playerBalance.pushTransaction(-neededCurrency);
-
-        handler.slots.get(slot).setStack(stack.copy());
     }
 
     @Unique
-    private static void numismatic$autofillWithMoneyBag(int slot, ItemStack stack, MerchantScreenHandler handler, CurrencyComponent playerBalance) {
-        if (ItemStack.areEqual(stack, handler.getSlot(slot).getStack())) return;
-        PlayerEntity player = ((PlayerInventory) handler.getSlot(3).inventory).player;
-
-        //See how much is required and how much in present in the player's inventory
-        long requiredCurrency = NumismaticOverhaulItems.MONEY_BAG.getValue(stack);
+    private static void numismatic$autofillWithMoneyBag(MerchantMenu handler, Player player, CurrencyComponent playerBalance, ItemStack moneyBagStack) {
+        long requiredCurrency = NumismaticOverhaulItems.MONEY_BAG.getValue(moneyBagStack);
         long availableCurrencyInPlayerInventory = CurrencyHelper.getMoneyInInventory(player, false);
 
-        //Find out how much we still need to fill
         long neededCurrency = requiredCurrency - availableCurrencyInPlayerInventory;
-
-        //Is that even possible?
         if (neededCurrency > playerBalance.getValue()) return;
 
         if (neededCurrency <= 0) {
@@ -84,21 +84,20 @@ public class MerchantScreenHandlerMixin {
             CurrencyHelper.deductFromInventory(player, availableCurrencyInPlayerInventory);
             playerBalance.pushTransaction(-neededCurrency);
         }
-
-        handler.slots.get(slot).setStack(stack.copy());
     }
 
-    @Inject(method = "playYesSound", at = @At("HEAD"), cancellable = true)
+    // Block villager "yes" sound for non-entity merchants (shop)
+    @Inject(method = "playTradeSound", at = @At("HEAD"), cancellable = true)
     public void checkForEntityOnYes(CallbackInfo ci) {
-        if (!(merchant instanceof Entity)) ci.cancel();
+        if (!(this.trader instanceof Entity)) ci.cancel();
     }
 
-    @Inject(method = "canUse", at = @At("HEAD"), cancellable = true)
-    public void thwartTaxEvasion(PlayerEntity player, CallbackInfoReturnable<Boolean> cir) {
-        if (!(this.merchant instanceof ShopMerchant shopMerchant)) return;
+    @Inject(method = "stillValid", at = @At("HEAD"), cancellable = true)
+    public void thwartTaxEvasion(Player player, CallbackInfoReturnable<Boolean> cir) {
+        if (!(this.trader instanceof ShopMerchant shopMerchant)) return;
 
         var shop = shopMerchant.shop();
-        if (shop.getWorld().getBlockEntity(shop.getPos()) != shop || shop.getPos().getSquaredDistance(player.getX(), player.getY(), player.getZ()) > 100) {
+        if (shop.getLevel().getBlockEntity(shop.getBlockPos()) != shop || shop.getBlockPos().distSqr(player.blockPosition()) > 100) {
             cir.setReturnValue(false);
         }
     }

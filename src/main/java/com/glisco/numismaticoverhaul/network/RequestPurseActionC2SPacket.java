@@ -1,32 +1,53 @@
 package com.glisco.numismaticoverhaul.network;
 
 import com.glisco.numismaticoverhaul.ModComponents;
+import com.glisco.numismaticoverhaul.NumismaticOverhaul;
 import com.glisco.numismaticoverhaul.currency.CurrencyConverter;
 import com.glisco.numismaticoverhaul.currency.CurrencyHelper;
-import io.wispforest.owo.network.ServerAccess;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
-public record RequestPurseActionC2SPacket(Action action, long value) {
+public record RequestPurseActionC2SPacket(Action action, long value) implements CustomPacketPayload {
+    public static final CustomPacketPayload.Type<RequestPurseActionC2SPacket> ID =
+        new CustomPacketPayload.Type<>(NumismaticOverhaul.id("request_purse_action"));
 
-    public static void handle(RequestPurseActionC2SPacket message, ServerAccess access) {
-        final var player = access.player();
-        final long value = message.value();
+    public static final StreamCodec<FriendlyByteBuf, RequestPurseActionC2SPacket> CODEC = new StreamCodec<>() {
+        @Override
+        public void encode(FriendlyByteBuf buf, RequestPurseActionC2SPacket packet) {
+            buf.writeEnum(packet.action);
+            buf.writeLong(packet.value);
+        }
+        @Override
+        public RequestPurseActionC2SPacket decode(FriendlyByteBuf buf) {
+            Action action = buf.readEnum(Action.class);
+            long value = buf.readLong();
+            return new RequestPurseActionC2SPacket(action, value);
+        }
+    };
 
-        switch (message.action()) {
+    @Override
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+        return ID;
+    }
+
+    public static void handle(RequestPurseActionC2SPacket packet, ServerPlayNetworking.Context ctx) {
+        var player = ctx.player();
+        var value = packet.value();
+
+        switch (packet.action()) {
             case STORE_ALL ->
-                    ModComponents.CURRENCY.get(player).modify(CurrencyHelper.getMoneyInInventory(player, true));
+                ModComponents.get(player).modify(CurrencyHelper.getMoneyInInventory(player, true));
             case EXTRACT -> {
-                //Limit the amount of money we cam extract to prevent cheeky packet forgery
-                //It'd be a bit of a problem if a player somehow tried to extract -200 ;)
-                var extracting = Math.max(0, Math.min(value, ModComponents.CURRENCY.get(player).getValue()));
-
-                CurrencyConverter.getAsItemStackList(extracting).forEach(stack -> player.getInventory().offerOrDrop(stack));
-                ModComponents.CURRENCY.get(player).modify(-extracting);
+                var extracting = Math.max(0, Math.min(value, ModComponents.get(player).getValue()));
+                CurrencyConverter.getAsItemStackList(extracting).forEach(stack -> player.getInventory().add(stack));
+                ModComponents.get(player).modify(-extracting);
             }
             case EXTRACT_ALL -> {
-                CurrencyConverter.getAsValidStacks(ModComponents.CURRENCY.get(player).getValue())
-                        .forEach(stack -> player.getInventory().offerOrDrop(stack));
-
-                ModComponents.CURRENCY.get(player).modify(-ModComponents.CURRENCY.get(player).getValue());
+                CurrencyConverter.getAsValidStacks(ModComponents.get(player).getValue())
+                    .forEach(stack -> player.getInventory().add(stack));
+                ModComponents.get(player).modify(-ModComponents.get(player).getValue());
             }
         }
     }

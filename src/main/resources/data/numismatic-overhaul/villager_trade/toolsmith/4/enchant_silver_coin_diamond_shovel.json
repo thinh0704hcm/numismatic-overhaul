@@ -1,0 +1,25 @@
+{
+  "max_uses": 3.0,
+  "reputation_discount": 0.05,
+  "xp": 5.0,
+  "wants": {
+    "id": "numismatic-overhaul:silver_coin",
+    "count": 4.0
+  },
+  "gives": {
+    "id": "minecraft:diamond_shovel",
+    "count": 1.0
+  },
+  "given_item_modifiers": [
+    {
+      "function": "minecraft:enchant_with_levels",
+      "levels": {
+        "type": "minecraft:uniform",
+        "min": 15.0,
+        "max": 20.0
+      },
+      "options": "#minecraft:prismatic_ridge",
+      "include_additional_cost_component": false
+    }
+  ]
+}

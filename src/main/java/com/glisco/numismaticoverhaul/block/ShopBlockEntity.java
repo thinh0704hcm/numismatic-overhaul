@@ -1,44 +1,42 @@
 package com.glisco.numismaticoverhaul.block;
 
 import com.glisco.numismaticoverhaul.NumismaticOverhaul;
-import io.wispforest.endec.SerializationContext;
-import io.wispforest.endec.impl.KeyedEndec;
-import io.wispforest.owo.ops.WorldOps;
-import io.wispforest.owo.serialization.RegistriesAttribute;
-import io.wispforest.owo.util.ImplementedInventory;
+
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.LockableContainerBlockEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventories;
-import net.minecraft.inventory.SidedInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.listener.ClientPlayPacketListener;
-import net.minecraft.network.packet.Packet;
-import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
-import net.minecraft.registry.*;
-import net.minecraft.screen.*;
-import net.minecraft.text.Text;
-import net.minecraft.util.collection.DefaultedList;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.village.Merchant;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.ContainerHelper;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.world.inventory.*;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.network.chat.Component;
+import net.minecraft.core.NonNullList;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.item.trading.Merchant;
+import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import net.minecraft.world.WorldlyContainer;
 import java.util.*;
 import java.util.stream.IntStream;
 
-public class ShopBlockEntity extends LockableContainerBlockEntity implements ImplementedInventory, SidedInventory, NamedScreenHandlerFactory {
+public class ShopBlockEntity extends BaseContainerBlockEntity implements WorldlyContainer, MenuProvider {
 
     private static final int[] SLOTS = IntStream.range(0, 27).toArray();
     private static final int[] NO_SLOTS = new int[0];
-    public static KeyedEndec<List<ShopOffer>> OFFERS_LIST = ShopOffer.ENDEC.listOf().keyed("offers", ArrayList::new);
 
-    private DefaultedList<ItemStack> inventory = DefaultedList.ofSize(27, ItemStack.EMPTY);
+
+    private NonNullList<ItemStack> inventory = NonNullList.withSize(27, ItemStack.EMPTY);
 
     public boolean busy = false;
     private final Merchant merchant;
@@ -61,38 +59,38 @@ public class ShopBlockEntity extends LockableContainerBlockEntity implements Imp
     }
 
     @Override
-    public DefaultedList<ItemStack> getItems() {
+    public int getContainerSize() {
+        return 27;
+    }
+
+    @Override
+    public NonNullList<ItemStack> getItems() {
         return this.inventory;
     }
 
     @Override
-    public int[] getAvailableSlots(Direction side) {
+    protected void setItems(NonNullList<ItemStack> items) {
+        this.inventory = items;
+    }
+
+    @Override
+    public int[] getSlotsForFace(Direction side) {
         return allowsTransfer ? SLOTS : NO_SLOTS;
     }
 
     @Override
-    public boolean canInsert(int slot, ItemStack stack, @Nullable Direction dir) {
+    public boolean canPlaceItemThroughFace(int slot, ItemStack stack, @Nullable Direction dir) {
         return allowsTransfer;
     }
 
     @Override
-    public boolean canExtract(int slot, ItemStack stack, Direction dir) {
+    public boolean canTakeItemThroughFace(int slot, ItemStack stack, Direction dir) {
         return false;
     }
 
     @Override
-    protected Text getContainerName() {
-        return Text.translatable("gui.numismatic-overhaul.shop.inventory_title");
-    }
-
-    @Override
-    protected DefaultedList<ItemStack> getHeldStacks() {
-        return this.inventory;
-    }
-
-    @Override
-    protected void setHeldStacks(DefaultedList<ItemStack> inventory) {
-        this.inventory = inventory;
+    protected Component getDefaultName() {
+        return Component.translatable("gui.numismatic-overhaul.shop.inventory_title");
     }
 
     @NotNull
@@ -118,76 +116,73 @@ public class ShopBlockEntity extends LockableContainerBlockEntity implements Imp
 
     public void setStoredCurrency(long storedCurrency) {
         this.storedCurrency = storedCurrency;
-        markDirty();
+        setChanged();
     }
 
     public void addCurrency(long value) {
         this.storedCurrency += value;
-        markDirty();
+        setChanged();
     }
 
     @Override
-    public void writeNbt(NbtCompound tag, RegistryWrapper.WrapperLookup registryLookup) {
-        super.writeNbt(tag, registryLookup);
-        Inventories.writeNbt(tag, this.inventory, registryLookup);
-        tag.put(SerializationContext.attributes(RegistriesAttribute.of((DynamicRegistryManager) registryLookup)), OFFERS_LIST, offers);
+    protected void saveAdditional(ValueOutput tag) {
+        super.saveAdditional(tag);
+        ContainerHelper.saveAllItems(tag, this.inventory);
+        tag.store("Offers", ShopOffer.CODEC.listOf(), this.offers);
         tag.putBoolean("AllowsTransfer", this.allowsTransfer);
         tag.putLong("StoredCurrency", storedCurrency);
         if (owner != null) {
-            tag.putUuid("Owner", owner);
+            tag.putLong("OwnerMost", owner.getMostSignificantBits());
+            tag.putLong("OwnerLeast", owner.getLeastSignificantBits());
         }
     }
 
     @Override
-    public void readNbt(NbtCompound tag, RegistryWrapper.WrapperLookup registryLookup) {
-        super.readNbt(tag, registryLookup);
-        Inventories.readNbt(tag, this.inventory, registryLookup);
-        this.offers = tag.get(SerializationContext.attributes(RegistriesAttribute.of((DynamicRegistryManager) registryLookup)), OFFERS_LIST);
-        if (tag.contains("Owner")) {
-            owner = tag.getUuid("Owner");
-        }
-        this.allowsTransfer = tag.getBoolean("AllowsTransfer");
-        this.storedCurrency = tag.getLong("StoredCurrency");
+    protected void loadAdditional(ValueInput tag) {
+        super.loadAdditional(tag);
+        ContainerHelper.loadAllItems(tag, this.inventory);
+        this.offers = tag.<List<ShopOffer>>read("Offers", ShopOffer.CODEC.listOf()).orElse(new ArrayList<>());
+        long most = tag.getLongOr("OwnerMost", 0L);
+        long least = tag.getLongOr("OwnerLeast", 0L);
+        owner = (most != 0L || least != 0L) ? new UUID(most, least) : null;
+        this.allowsTransfer = tag.getBooleanOr("AllowsTransfer", false);
+        this.storedCurrency = tag.getLongOr("StoredCurrency", 0L);
     }
 
     public void addOrReplaceOffer(ShopOffer offer) {
-
         int indexToReplace = -1;
-
         for (int i = 0; i < offers.size(); i++) {
-            if (!ItemStack.areEqual(offer.getSellStack(), offers.get(i).getSellStack())) continue;
+            if (!ItemStack.isSameItemSameComponents(offer.getSellStack(), offers.get(i).getSellStack())) continue;
             indexToReplace = i;
             break;
         }
 
         if (indexToReplace == -1) {
             if (offers.size() >= 24) {
-                NumismaticOverhaul.LOGGER.error("Tried adding more than 24 trades to shop at {}", this.pos);
+                NumismaticOverhaul.LOGGER.error("Tried adding more than 24 trades to shop at {}", this.worldPosition);
                 return;
             }
             offers.add(offer);
         } else {
             offers.set(indexToReplace, offer);
         }
-
-        this.markDirty();
+        this.setChanged();
     }
 
     public void deleteOffer(ItemStack stack) {
-        if (!offers.removeIf(offer -> ItemStack.areEqual(stack, offer.getSellStack()))) {
-            NumismaticOverhaul.LOGGER.error("Tried to delete invalid trade for {} from shop at {}", stack, this.pos);
+        if (!offers.removeIf(offer -> ItemStack.isSameItemSameComponents(stack, offer.getSellStack()))) {
+            NumismaticOverhaul.LOGGER.error("Tried to delete invalid trade for {} from shop at {}", stack, this.worldPosition);
             return;
         }
-
-        this.markDirty();
+        this.setChanged();
     }
 
-    public static void tick(World world, BlockPos ignoredPos, BlockState ignoredState, ShopBlockEntity blockEntity) {
-        blockEntity.tick(world);
+    public static void tick(Level level, BlockPos ignoredPos, BlockState ignoredState, ShopBlockEntity blockEntity) {
+        blockEntity.tick(level);
     }
 
-    public void tick(World world) {
-        if (world.getTime() % 60 == 0) tradeIndex++;
+    public void tick(Level level) {
+        if (level.getLevelData().getGameTime() % 60 == 0) tradeIndex++;
     }
 
     @Environment(EnvType.CLIENT)
@@ -197,24 +192,17 @@ public class ShopBlockEntity extends LockableContainerBlockEntity implements Imp
     }
 
     @Override
-    protected ScreenHandler createScreenHandler(int syncId, PlayerInventory playerInventory) {
+    protected AbstractContainerMenu createMenu(int syncId, Inventory playerInventory) {
         return new ShopScreenHandler(syncId, playerInventory, this);
     }
 
     @Override
-    public boolean canPlayerUse(PlayerEntity player) {
-        if (this.world == null) return false;
-        return player.getUuid().equals(this.owner) && this.world.getBlockEntity(this.pos) == this && player.canInteractWithBlockAt(this.pos, 10);
+    public boolean stillValid(Player player) {
+        if (this.level == null) return false;
+        return player.getUUID().equals(this.owner) && this.level.getBlockEntity(this.worldPosition) == this && this.worldPosition.distSqr(player.blockPosition()) <= 100;
     }
 
-    @Override
-    public NbtCompound toInitialChunkDataNbt(RegistryWrapper.WrapperLookup registryLookup) {
-        NbtCompound tag = new NbtCompound();
-        this.writeNbt(tag, registryLookup);
-        tag.remove("Items");
-        tag.remove("StoredCurrency");
-        return tag;
-    }
+
 
     public UUID getOwner() {
         return owner;
@@ -222,18 +210,14 @@ public class ShopBlockEntity extends LockableContainerBlockEntity implements Imp
 
     public void setOwner(UUID owner) {
         this.owner = owner;
-        markDirty();
+        setChanged();
     }
 
     @Nullable
     @Override
-    public Packet<ClientPlayPacketListener> toUpdatePacket() {
-        return BlockEntityUpdateS2CPacket.create(this);
+    public net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket getUpdatePacket() {
+        return ClientboundBlockEntityDataPacket.create(this);
     }
 
-    @Override
-    public void markDirty() {
-        super.markDirty();
-        WorldOps.updateIfOnServer(world, pos);
-    }
+    // getUpdateTag handled by parent BaseContainerBlockEntity
 }

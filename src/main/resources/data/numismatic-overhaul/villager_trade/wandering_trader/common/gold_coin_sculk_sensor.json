@@ -1,0 +1,13 @@
+{
+  "max_uses": 2.0,
+  "reputation_discount": 0.05,
+  "xp": 5.0,
+  "wants": {
+    "id": "numismatic-overhaul:gold_coin",
+    "count": 1.0
+  },
+  "gives": {
+    "id": "minecraft:sculk_sensor",
+    "count": 1.0
+  }
+}

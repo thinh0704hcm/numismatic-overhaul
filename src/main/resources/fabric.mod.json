@@ -19,9 +19,6 @@
     ],
     "main": [
       "com.glisco.numismaticoverhaul.NumismaticOverhaul"
-    ],
-    "cardinal-components-entity": [
-      "com.glisco.numismaticoverhaul.ModComponents"
     ]
   },
   "mixins": [
@@ -30,15 +27,7 @@
   "accessWidener": "numismatic-overhaul.accesswidener",
   "depends": {
     "fabricloader": ">=0.16.5",
-    "fabric": "*",
-    "minecraft": ">=1.21",
-    "cardinal-components-base": ">=6.1.0",
-    "cardinal-components-entity": ">=6.1.0",
-    "owo": ">=0.12.15"
-  },
-  "custom": {
-    "cardinal-components": [
-      "numismatic-overhaul:currency"
-    ]
+    "fabric-api": "*",
+    "minecraft": ">=1.21"
   }
 }

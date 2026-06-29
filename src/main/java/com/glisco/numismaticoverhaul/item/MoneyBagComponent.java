@@ -1,23 +1,30 @@
 package com.glisco.numismaticoverhaul.item;
 
 import com.glisco.numismaticoverhaul.currency.CurrencyResolver;
-import io.wispforest.endec.StructEndec;
-import io.wispforest.endec.impl.StructEndecBuilder;
-import io.wispforest.owo.serialization.CodecUtils;
-import net.minecraft.component.ComponentType;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.core.component.DataComponentType;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.Registry;
 
 import static com.glisco.numismaticoverhaul.NumismaticOverhaul.MONEY_BAG_COMPONENT;
 import static com.glisco.numismaticoverhaul.NumismaticOverhaul.id;
 
 public record MoneyBagComponent(long bronze, long silver, long gold) {
 
-    public static final StructEndec<MoneyBagComponent> ENDEC = StructEndecBuilder.of(
-        StructEndec.LONG.fieldOf("bronze", MoneyBagComponent::bronze),
-        StructEndec.LONG.fieldOf("silver", MoneyBagComponent::silver),
-        StructEndec.LONG.fieldOf("gold", MoneyBagComponent::gold),
+    public static final Codec<MoneyBagComponent> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+        Codec.LONG.fieldOf("bronze").forGetter(MoneyBagComponent::bronze),
+        Codec.LONG.fieldOf("silver").forGetter(MoneyBagComponent::silver),
+        Codec.LONG.fieldOf("gold").forGetter(MoneyBagComponent::gold)
+    ).apply(instance, MoneyBagComponent::new));
+
+    public static final StreamCodec<net.minecraft.network.FriendlyByteBuf, MoneyBagComponent> STREAM_CODEC = StreamCodec.composite(
+        ByteBufCodecs.VAR_LONG, MoneyBagComponent::bronze,
+        ByteBufCodecs.VAR_LONG, MoneyBagComponent::silver,
+        ByteBufCodecs.VAR_LONG, MoneyBagComponent::gold,
         MoneyBagComponent::new
     );
 
@@ -60,10 +67,10 @@ public record MoneyBagComponent(long bronze, long silver, long gold) {
         return CurrencyResolver.combineValues(bronze, silver, gold);
     }
 
-    public static ComponentType<MoneyBagComponent> register() {
-        return Registry.register(Registries.DATA_COMPONENT_TYPE, id("money_bag"), ComponentType.<MoneyBagComponent>builder()
-            .codec(CodecUtils.toCodec(MoneyBagComponent.ENDEC))
-            .packetCodec(CodecUtils.toPacketCodec(MoneyBagComponent.ENDEC))
+    public static DataComponentType<MoneyBagComponent> register() {
+        return Registry.register(BuiltInRegistries.DATA_COMPONENT_TYPE, id("money_bag"), DataComponentType.<MoneyBagComponent>builder()
+            .persistent(CODEC)
+            .networkSynchronized(STREAM_CODEC)
             .build()
         );
     }

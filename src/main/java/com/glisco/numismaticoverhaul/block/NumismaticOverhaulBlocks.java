@@ -1,65 +1,54 @@
 package com.glisco.numismaticoverhaul.block;
 
 import com.glisco.numismaticoverhaul.NumismaticOverhaul;
-import com.glisco.numismaticoverhaul.currency.CurrencyHelper;
-import com.glisco.numismaticoverhaul.item.CurrencyItem;
-import com.glisco.numismaticoverhaul.item.CurrencyTooltipData;
-import io.wispforest.owo.registration.reflect.BlockEntityRegistryContainer;
-import io.wispforest.owo.registration.reflect.BlockRegistryContainer;
-import net.minecraft.block.Block;
-import net.minecraft.block.entity.BlockEntityType;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.ContainerComponent;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.item.*;
-import net.minecraft.item.tooltip.TooltipData;
-import net.minecraft.item.tooltip.TooltipType;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Rarity;
-import java.util.*;
 
-public class NumismaticOverhaulBlocks implements BlockRegistryContainer {
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.Registry;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Item;
+import java.util.Set;
 
-    public static final Block SHOP = new ShopBlock(false);
-    public static final Block INEXHAUSTIBLE_SHOP = new ShopBlock(true);
-    public static final Block PIGGY_BANK = new PiggyBankBlock();
+public class NumismaticOverhaulBlocks {
 
-    @Override
-    public BlockItem createBlockItem(Block block, String identifier) {
-        if (block == INEXHAUSTIBLE_SHOP) {
-            return new BlockItem(block, new Item.Settings().group(NumismaticOverhaul.NUMISMATIC_GROUP).rarity(Rarity.EPIC)) {
-                @Override
-                public void appendTooltip(ItemStack stack, TooltipContext context, List<Text> tooltip, TooltipType type) {
-                    tooltip.add(Text.translatable(stack.getTranslationKey() + ".tooltip").formatted(Formatting.GRAY));
-                }
-            };
-        } else if (block == PIGGY_BANK) {
-            return new BlockItem(block, new Item.Settings().group(NumismaticOverhaul.NUMISMATIC_GROUP).equipmentSlot((entity, stack) -> EquipmentSlot.HEAD)) {
+    public static Block SHOP;
+    public static Block INEXHAUSTIBLE_SHOP;
+    public static Block PIGGY_BANK;
 
-                @Override
-                public Optional<TooltipData> getTooltipData(ItemStack stack) {
-                    var containerComponent = stack.getComponents().getOrDefault(DataComponentTypes.CONTAINER, ContainerComponent.DEFAULT);
+    public static void register() {
+        SHOP = new ShopBlock(ResourceKey.create(Registries.BLOCK, NumismaticOverhaul.id("shop")), false);
+        INEXHAUSTIBLE_SHOP = new ShopBlock(ResourceKey.create(Registries.BLOCK, NumismaticOverhaul.id("inexhaustible_shop")), true);
+        PIGGY_BANK = new PiggyBankBlock(ResourceKey.create(Registries.BLOCK, NumismaticOverhaul.id("piggy_bank")));
 
-                    var valueList = CurrencyHelper.getFromContainer(containerComponent);
-                    long[] values = new long[valueList.size()];
-                    for (int i = 0; i < valueList.size(); i++) {
-                        values[i] = valueList.get(i);
-                    }
-                    return Optional.of(new CurrencyTooltipData(values, new long[]{-1}));
-                }
-            };
-        }
+        Registry.register(BuiltInRegistries.BLOCK, NumismaticOverhaul.id("shop"), SHOP);
+        Registry.register(BuiltInRegistries.BLOCK, NumismaticOverhaul.id("inexhaustible_shop"), INEXHAUSTIBLE_SHOP);
+        Registry.register(BuiltInRegistries.BLOCK, NumismaticOverhaul.id("piggy_bank"), PIGGY_BANK);
 
-        return new BlockItem(block, new Item.Settings().group(NumismaticOverhaul.NUMISMATIC_GROUP));
+        Registry.register(BuiltInRegistries.ITEM, NumismaticOverhaul.id("shop"), new BlockItem(SHOP, new Item.Properties().setId(ResourceKey.create(Registries.ITEM, NumismaticOverhaul.id("shop")))));
+        Registry.register(BuiltInRegistries.ITEM, NumismaticOverhaul.id("inexhaustible_shop"), new BlockItem(INEXHAUSTIBLE_SHOP, new Item.Properties().setId(ResourceKey.create(Registries.ITEM, NumismaticOverhaul.id("inexhaustible_shop")))));
+        Registry.register(BuiltInRegistries.ITEM, NumismaticOverhaul.id("piggy_bank"), new BlockItem(PIGGY_BANK, new Item.Properties().setId(ResourceKey.create(Registries.ITEM, NumismaticOverhaul.id("piggy_bank")))));
+
+        Entities.register();
     }
 
-    public static final class Entities implements BlockEntityRegistryContainer {
 
-        public static final BlockEntityType<ShopBlockEntity> SHOP =
-            BlockEntityType.Builder.create(ShopBlockEntity::new, NumismaticOverhaulBlocks.SHOP, NumismaticOverhaulBlocks.INEXHAUSTIBLE_SHOP).build();
+    public static final class Entities {
 
-        public static final BlockEntityType<PiggyBankBlockEntity> PIGGY_BANK =
-            BlockEntityType.Builder.create(PiggyBankBlockEntity::new, NumismaticOverhaulBlocks.PIGGY_BANK).build();
+        public static BlockEntityType<ShopBlockEntity> SHOP;
+        public static BlockEntityType<PiggyBankBlockEntity> PIGGY_BANK;
+
+        public static void register() {
+            SHOP = new BlockEntityType<>(ShopBlockEntity::new, Set.of(
+                NumismaticOverhaulBlocks.SHOP,
+                NumismaticOverhaulBlocks.INEXHAUSTIBLE_SHOP));
+            PIGGY_BANK = new BlockEntityType<>(PiggyBankBlockEntity::new, Set.of(
+                NumismaticOverhaulBlocks.PIGGY_BANK));
+
+            Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, NumismaticOverhaul.id("shop"), SHOP);
+            Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, NumismaticOverhaul.id("piggy_bank"), PIGGY_BANK);
+        }
     }
 }

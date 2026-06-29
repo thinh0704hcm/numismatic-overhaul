@@ -2,160 +2,90 @@ package com.glisco.numismaticoverhaul.currency;
 
 import com.glisco.numismaticoverhaul.*;
 import com.glisco.numismaticoverhaul.item.CoinItem;
-import io.wispforest.owo.config.ConfigSynchronizer;
-import io.wispforest.owo.ops.TextOps;
-import io.wispforest.owo.ui.core.Color;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import org.jetbrains.annotations.NotNull;
-import org.ladysnake.cca.api.v3.component.Component;
-import org.ladysnake.cca.api.v3.component.sync.AutoSyncedComponent;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.ChatFormatting;
 import java.util.ArrayList;
 import java.util.List;
 
 import static com.glisco.numismaticoverhaul.NumismaticOverhaul.LOGGER;
 
-public class CurrencyComponent implements Component, AutoSyncedComponent {
+public class CurrencyComponent {
 
-    private static final Logger log = LoggerFactory.getLogger(CurrencyComponent.class);
-    private long value;
-    private final PlayerEntity provider;
-
+    private final Player provider;
     private final List<Long> transactions;
 
-    public CurrencyComponent(PlayerEntity provider) {
+    public CurrencyComponent(Player provider) {
         this.provider = provider;
         this.transactions = new ArrayList<>();
     }
 
-    @Override
-    public void readFromNbt(NbtCompound tag, RegistryWrapper.@NotNull WrapperLookup registryLookup) {
-        value = tag.get(CurrencyHelper.VALUE);
-    }
-
-    @Override
-    public void writeToNbt(NbtCompound tag, RegistryWrapper.@NotNull WrapperLookup registryLookup) {
-        tag.put(CurrencyHelper.VALUE, value);
-    }
-
     public long getValue() {
-        return value;
+        long[] data = ModComponents.getCurrencyData(provider.getUUID());
+        return data[0] + data[1] * 100 + data[2] * 10000;
     }
 
-    /**
-     * This is only to be used in specific edge cases
-     * <br>
-     * Use {@link CurrencyComponent#modify(long)} or the transaction system wherever possible
-     */
     @Deprecated
     public void setValue(long value) {
-        this.value = value;
-
-        //Update Client
-        if (!provider.getWorld().isClient) {
-            ModComponents.CURRENCY.sync(this.provider);
-        }
+        var split = CurrencyResolver.splitValues(value);
+        ModComponents.setCurrencyData(provider.getUUID(), split);
     }
 
-    /**
-     * Modifies this component, displays a message with the change
-     *
-     * @param value The value to modify by
-     */
     public void modify(long value) {
-        // This code can be triggered on both Client and Server, for example via Money Bags
-        setValue(this.value + value);
+        setValue(getValue() + value);
 
         long tempValue = value < 0 ? -value : value;
-
         List<ItemStack> transactionStacks = CurrencyConverter.getAsItemStackList(tempValue);
         if (transactionStacks.isEmpty()) return;
 
+        if (provider.level().isClientSide()) return;
 
-        // Only do text handling on the server, this is to prevent duplicate text if the config is set to display in chat
-        if (provider.getWorld().isClient()) return;
+        var moneyMessageLocation = NumismaticOverhaul.CONFIG.moneyMessageLocation();
+        if (moneyMessageLocation == MoneyMessageLocation.DISABLED) return;
 
-        // Always try to respect the clients option on where they want the message
-        var config = ConfigSynchronizer.getClientOptions(
-            (ServerPlayerEntity) provider,
-            NumismaticOverhaul.CONFIG
-        );
-
-        if (config == null) {
-            LOGGER.warn("Unable to fetch synced config option from the client");
-            return;
-        }
-
-        var moneyMessageLocation = config.get(NumismaticOverhaul.CONFIG.keys.moneyMessageLocation);
-        if (moneyMessageLocation == NumismaticOverhaulConfigModel.MoneyMessageLocation.DISABLED) return;
-
-        // Text handling examples:
-        // Actionbar = "+ [12 Silver, 4 Bronze]"
-        // Chat = "numismatic > + [12 Silver, 4 Bronze]"
-        var message = moneyMessageLocation == NumismaticOverhaulConfigModel.MoneyMessageLocation.CHAT
+        var message = moneyMessageLocation == MoneyMessageLocation.CHAT
             ?
-            TextOps.withColor("numismatic §> ", Currency.GOLD.getNameColor(), Color.ofFormatting(Formatting.GRAY).argb())
+            net.minecraft.network.chat.Component.literal("numismatic §> ").withStyle(s -> s.withColor(Currency.GOLD.getNameColor()))
             :
-            Text.empty();
+            net.minecraft.network.chat.Component.empty();
 
-        message.append(value < 0 ? Text.literal("§c- ") : Text.literal("§a+ "));
-        message.append(Text.literal("§7["));
+        message.append(value < 0 ? net.minecraft.network.chat.Component.literal("§c- ") : net.minecraft.network.chat.Component.literal("§a+ "));
+        message.append(net.minecraft.network.chat.Component.literal("§7["));
         for (ItemStack stack : transactionStacks) {
-            message.append(Text.literal("§b" + stack.getCount() + " "));
-            message.append(TextOps.translateWithColor(
-                "currency.numismatic-overhaul." + ((CoinItem) stack.getItem()).currency.name().toLowerCase(),
-                ((CoinItem) stack.getItem()).currency.getNameColor()
-            ));
+            message.append(net.minecraft.network.chat.Component.literal("§b" + stack.getCount() + " "));
+            message.append(net.minecraft.network.chat.Component.translatable(
+                "currency.numismatic-overhaul." + ((CoinItem) stack.getItem()).currency.name().toLowerCase()
+            ).withStyle(s -> s.withColor(((CoinItem) stack.getItem()).currency.getNameColor())));
 
             if (transactionStacks.indexOf(stack) != transactionStacks.size() - 1) {
-                message.append(Text.literal(", "));
+                message.append(net.minecraft.network.chat.Component.literal(", "));
             }
         }
-        message.append(Text.literal("§7]"));
+        message.append(net.minecraft.network.chat.Component.literal("§7]"));
 
-        provider.sendMessage(message, moneyMessageLocation == NumismaticOverhaulConfigModel.MoneyMessageLocation.ACTIONBAR);
-
+        if (moneyMessageLocation == MoneyMessageLocation.ACTIONBAR) {
+            if (provider instanceof net.minecraft.server.level.ServerPlayer sp) {
+                sp.sendSystemMessage(message);
+            } else {
+                provider.sendSystemMessage(message);
+            }
+        } else {
+            provider.sendSystemMessage(message);
+        }
     }
 
-    /**
-     * Same as {@link CurrencyComponent#modify(long)}, but doesn't show a message in the action bar
-     *
-     * @param value The value to modify by
-     */
     public void silentModify(long value) {
-        setValue(this.value + value);
+        setValue(getValue() + value);
     }
 
-    /**
-     * Enqueues a transaction onto the stack
-     *
-     * @param value The value this component should be modified by
-     */
     public void pushTransaction(long value) {
         this.transactions.add(value);
     }
 
-    /**
-     * Pops the most recent transaction off the stack
-     *
-     * @return The transaction that was popped
-     */
     public Long popTransaction() {
         return this.transactions.removeLast();
     }
 
-    /**
-     * Commits the transactions on the current stack into the actual component value and pops the entire stack
-     * <br>
-     * Displays one accumulated action bar message
-     */
     public void commitTransactions() {
         this.modify(this.transactions.stream().mapToLong(Long::longValue).sum());
         this.transactions.clear();

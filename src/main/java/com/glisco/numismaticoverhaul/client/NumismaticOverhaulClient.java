@@ -2,116 +2,97 @@ package com.glisco.numismaticoverhaul.client;
 
 import com.glisco.numismaticoverhaul.NumismaticOverhaul;
 import com.glisco.numismaticoverhaul.block.NumismaticOverhaulBlocks;
-import com.glisco.numismaticoverhaul.client.gui.CurrencyTooltipComponent;
 import com.glisco.numismaticoverhaul.client.gui.PiggyBankScreen;
-import com.glisco.numismaticoverhaul.client.gui.PurseLayerElement;
+import com.glisco.numismaticoverhaul.client.gui.PurseOverlay;
 import com.glisco.numismaticoverhaul.client.gui.ShopScreen;
-import com.glisco.numismaticoverhaul.currency.Currency;
-import com.glisco.numismaticoverhaul.item.CurrencyTooltipData;
-import com.glisco.numismaticoverhaul.item.NumismaticOverhaulItems;
-import com.glisco.numismaticoverhaul.mixin.LayerInstanceAccessor;
-import io.wispforest.owo.mixin.ui.layers.HandledScreenAccessor;
-import io.wispforest.owo.ui.container.StackLayout;
-import io.wispforest.owo.ui.core.Component;
-import io.wispforest.owo.ui.core.OwoUIDrawContext;
-import io.wispforest.owo.ui.core.Positioning;
-import io.wispforest.owo.ui.core.Sizing;
-import io.wispforest.owo.ui.layers.Layers;
+import com.glisco.numismaticoverhaul.mixin.ScreenAccessor;
+import com.glisco.numismaticoverhaul.network.RequestPurseActionC2SPacket;
+import com.glisco.numismaticoverhaul.network.UpdateShopScreenS2CPacket;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.rendering.v1.TooltipComponentCallback;
-import net.minecraft.client.gui.screen.ingame.CreativeInventoryScreen;
-import net.minecraft.client.gui.screen.ingame.HandledScreens;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.client.gui.screen.ingame.MerchantScreen;
-import net.minecraft.client.item.ModelPredicateProviderRegistry;
-import net.minecraft.client.render.block.entity.BlockEntityRendererFactories;
-import net.minecraft.util.Identifier;
-
-import java.util.List;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
+import net.minecraft.client.gui.components.AbstractButton;
+import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.gui.screens.inventory.MerchantScreen;
+import net.minecraft.client.gui.screens.MenuScreens;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderers;
+import com.glisco.numismaticoverhaul.client.ShopBlockEntityRender;
+import net.minecraft.network.chat.Component;
 
 @Environment(EnvType.CLIENT)
 public class NumismaticOverhaulClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        HandledScreens.register(NumismaticOverhaul.SHOP_SCREEN_HANDLER_TYPE, ShopScreen::new);
-        HandledScreens.register(NumismaticOverhaul.PIGGY_BANK_SCREEN_HANDLER_TYPE, PiggyBankScreen::new);
+        MenuScreens.register(NumismaticOverhaul.SHOP_SCREEN_HANDLER_TYPE, ShopScreen::new);
+        MenuScreens.register(NumismaticOverhaul.PIGGY_BANK_SCREEN_HANDLER_TYPE, PiggyBankScreen::new);
 
-        ModelPredicateProviderRegistry.register(NumismaticOverhaulItems.BRONZE_COIN, Identifier.of("coins"), (stack, world, entity, seed) -> stack.getCount() / 100.0f);
-        ModelPredicateProviderRegistry.register(NumismaticOverhaulItems.SILVER_COIN, Identifier.of("coins"), (stack, world, entity, seed) -> stack.getCount() / 100.0f);
-        ModelPredicateProviderRegistry.register(NumismaticOverhaulItems.GOLD_COIN, Identifier.of("coins"), (stack, world, entity, seed) -> stack.getCount() / 100.0f);
+        BlockEntityRenderers.register(NumismaticOverhaulBlocks.Entities.SHOP, ShopBlockEntityRender::new);
 
-        ModelPredicateProviderRegistry.register(NumismaticOverhaulItems.MONEY_BAG, Identifier.of("size"), (stack, world, entity, seed) -> {
-            long value = NumismaticOverhaulItems.MONEY_BAG.getValue(stack);
+        // Register purse overlay on target screens
+        ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+            if (!(screen instanceof InventoryScreen || screen instanceof CreativeModeInventoryScreen || screen instanceof MerchantScreen)) {
+                return;
+            }
 
-            if (value >= Currency.GOLD_VALUE) return 1;
-            else if (value >= Currency.SILVER_VALUE) return .5f;
-            else return 0;
+            AbstractContainerScreen<?> containerScreen = (AbstractContainerScreen<?>) screen;
+
+            // Compute button position based on screen type
+            int buttonX, buttonY;
+            if (screen instanceof CreativeModeInventoryScreen) {
+                buttonX = containerScreen.leftPos + 38 + NumismaticOverhaul.CONFIG.purseOffsets().creativeX();
+                buttonY = containerScreen.topPos + 4 + NumismaticOverhaul.CONFIG.purseOffsets().creativeY();
+            } else if (screen instanceof MerchantScreen) {
+                buttonX = containerScreen.leftPos + 260 + NumismaticOverhaul.CONFIG.purseOffsets().merchantX();
+                buttonY = containerScreen.topPos + 5 + NumismaticOverhaul.CONFIG.purseOffsets().merchantY();
+            } else {
+                buttonX = containerScreen.leftPos + 160 + NumismaticOverhaul.CONFIG.purseOffsets().survivalX();
+                buttonY = containerScreen.topPos + 5 + NumismaticOverhaul.CONFIG.purseOffsets().survivalY();
+            }
+
+            // Invisible clickable button for purse toggle (purse icon is rendered by PurseOverlay)
+            AbstractButton purseButton = new AbstractButton(buttonX, buttonY, 11, 13, Component.empty()) {
+                @Override
+                public void onPress(net.minecraft.client.input.InputWithModifiers input) {
+                    if (net.minecraft.client.Minecraft.getInstance().options.keyShift.isDown()) {
+                        ClientPlayNetworking.send(RequestPurseActionC2SPacket.storeAll());
+                    } else {
+                        PurseOverlay.popupOpen = !PurseOverlay.popupOpen;
+                    }
+                }
+
+                @Override
+                protected void extractContents(
+                        net.minecraft.client.gui.GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+                    // Invisible — purse icon is drawn by PurseOverlay.render()
+                }
+
+                @Override
+                protected void updateWidgetNarration(
+                        net.minecraft.client.gui.narration.NarrationElementOutput builder) {
+                    defaultButtonNarrationText(builder);
+                }
+            };
+
+            ((ScreenAccessor) screen).numismatic$addRenderableWidget(purseButton);
+
+            // Render purse overlay after screen content
+            ScreenEvents.afterExtract(screen).register((s, drawContext, mouseX, mouseY, tickDelta) -> {
+                PurseOverlay.render(s, drawContext, mouseX, mouseY, tickDelta);
+            });
+
+            // Intercept mouse clicks for popup handling
+            ScreenMouseEvents.allowMouseClick(screen).register((s, event) -> {
+                return PurseOverlay.handleMouseClick(s, event);
+            });
         });
 
-        TooltipComponentCallback.EVENT.register(data -> {
-            if (!(data instanceof CurrencyTooltipData currencyData)) return null;
-            return new CurrencyTooltipComponent(currencyData);
-        });
-
-        BlockEntityRendererFactories.register(NumismaticOverhaulBlocks.Entities.SHOP, ShopBlockEntityRender::new);
-
-        Layers.add(
-                PurseLayerContainer::new,
-                new PurseLayerElement<>((instance, component) -> {
-                    instance.aggressivePositioning = true;
-                    ((LayerInstanceAccessor) instance).numismatic$getLayoutUpdaters().add(() -> {
-                        if (instance.screen.isInventoryTabSelected()) {
-                            component.positioning(Positioning.absolute(
-                                    ((HandledScreenAccessor) instance.screen).owo$getRootX() + 38 + NumismaticOverhaul.CONFIG.purseOffsets.creativeX() ,
-                                    ((HandledScreenAccessor) instance.screen).owo$getRootY() + 4 + NumismaticOverhaul.CONFIG.purseOffsets.creativeY()
-                            ));
-                        } else {
-                            component.positioning(Positioning.absolute(-50, -50));
-                        }
-                    });
-                }),
-                CreativeInventoryScreen.class
-        );
-
-        Layers.add(
-                PurseLayerContainer::new,
-                new PurseLayerElement<>((instance, component) -> {
-                    instance.aggressivePositioning = true;
-                    instance.alignComponentToHandledScreenCoordinates(
-                            component,
-                            160 + NumismaticOverhaul.CONFIG.purseOffsets.survivalX(),
-                            5 + NumismaticOverhaul.CONFIG.purseOffsets.survivalY()
-                    );
-                }),
-                InventoryScreen.class
-        );
-
-        Layers.add(
-                PurseLayerContainer::new,
-                new PurseLayerElement<>((instance, component) -> instance.alignComponentToHandledScreenCoordinates(
-                        component,
-                        260 + NumismaticOverhaul.CONFIG.purseOffsets.merchantX(),
-                        5 + NumismaticOverhaul.CONFIG.purseOffsets.merchantY()
-                )),
-                MerchantScreen.class
-        );
-    }
-
-    private static class PurseLayerContainer extends StackLayout {
-
-        protected PurseLayerContainer(Sizing horizontalSizing, Sizing verticalSizing) {
-            super(horizontalSizing, verticalSizing);
-        }
-
-        @Override
-        protected void drawChildren(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta, List<? extends Component> children) {
-            context.getMatrices().push();
-            context.getMatrices().translate(0, 0, 300);
-            super.drawChildren(context, mouseX, mouseY, partialTicks, delta, children);
-            context.getMatrices().pop();
-        }
+        // Register S2C packet handler
+        ClientPlayNetworking.registerGlobalReceiver(UpdateShopScreenS2CPacket.ID, UpdateShopScreenS2CPacket::handle);
     }
 }

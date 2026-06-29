@@ -1,80 +1,68 @@
 package com.glisco.numismaticoverhaul.block;
 
-import io.wispforest.owo.util.ImplementedInventory;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.LootableContainerBlockEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.Inventories;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.ScreenHandlerContext;
-import net.minecraft.text.Text;
-import net.minecraft.util.collection.DefaultedList;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.entity.BaseContainerBlockEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.ContainerHelper;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerLevelAccess;
+import net.minecraft.network.chat.Component;
+import net.minecraft.core.NonNullList;
+import net.minecraft.core.BlockPos;
 import org.jetbrains.annotations.Nullable;
 
-public class PiggyBankBlockEntity extends LootableContainerBlockEntity {
+public class PiggyBankBlockEntity extends BaseContainerBlockEntity {
 
-    private DefaultedList<ItemStack> inventory = DefaultedList.ofSize(3, ItemStack.EMPTY);
+    private NonNullList<ItemStack> inventory = NonNullList.withSize(3, ItemStack.EMPTY);
 
     public PiggyBankBlockEntity(BlockPos pos, BlockState state) {
         super(NumismaticOverhaulBlocks.Entities.PIGGY_BANK, pos, state);
     }
 
     @Override
-    public void readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
-        super.readNbt(nbt, registryLookup);
+    public int getContainerSize() {
+        return 3;
+    }
 
+    @Override
+    public void loadAdditional(ValueInput tag) {
+        super.loadAdditional(tag);
         this.inventory.clear();
-        Inventories.readNbt(nbt, this.inventory, registryLookup);
+        ContainerHelper.loadAllItems(tag, this.inventory);
     }
 
     @Override
-    protected void writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
-        super.writeNbt(nbt, registryLookup);
-        Inventories.writeNbt(nbt, this.inventory, registryLookup);
+    protected void saveAdditional(ValueOutput tag) {
+        super.saveAdditional(tag);
+        ContainerHelper.saveAllItems(tag, this.inventory);
     }
 
     @Override
-    protected Text getContainerName() {
-        return Text.translatable("container.numismatic-overhaul.piggy_bank");
+    protected Component getDefaultName() {
+        return Component.translatable("container.numismatic-overhaul.piggy_bank");
     }
 
     @Override
-    protected DefaultedList<ItemStack> getHeldStacks() {
+    protected NonNullList<ItemStack> getItems() {
         return inventory;
     }
 
     @Override
-    protected void setHeldStacks(DefaultedList<ItemStack> inventory) {
+    protected void setItems(NonNullList<ItemStack> inventory) {
         this.inventory = inventory;
     }
 
-    public DefaultedList<ItemStack> inventory() {
+    public NonNullList<ItemStack> inventory() {
         return this.inventory;
     }
 
     @Nullable
     @Override
-    public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity player) {
-        return new PiggyBankScreenHandler(
-                syncId,
-                player.getInventory(),
-                ScreenHandlerContext.create(this.world, this.pos),
-                (ImplementedInventory) () -> PiggyBankBlockEntity.this.inventory
-        );
-    }
-
-    @Override
-    protected ScreenHandler createScreenHandler(int syncId, PlayerInventory playerInventory) {
-        return new PiggyBankScreenHandler(syncId, playerInventory);
-    }
-
-    @Override
-    public int size() {
-        return 0;
+    public AbstractContainerMenu createMenu(int syncId, Inventory inv) {
+        return new PiggyBankScreenHandler(syncId, inv, ContainerLevelAccess.create(this.level, this.worldPosition), this);
     }
 }

@@ -8,6 +8,7 @@
   "block.numismatic-overhaul.inexhaustible_shop.tooltip": "仅限创造模式 - 取之不尽的商店",
   "block.numismatic-overhaul.piggy_bank": "猪猪存钱罐",
   "gui.numismatic-overhaul.shop.price": "价格",
+  "gui.numismatic-overhaul.shop.extract": "提取",
   "gui.numismatic-overhaul.shop.inventory_title": "商店库存",
   "gui.numismatic-overhaul.shop.merchant_title": "商店",
   "gui.numismatic-overhaul.shop.transfer_tooltip.enabled": [

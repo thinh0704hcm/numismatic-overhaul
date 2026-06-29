@@ -8,6 +8,7 @@
   "block.numismatic-overhaul.inexhaustible_shop.tooltip": "Лише в творчості — ніколи не вичерпуються запаси",
   "block.numismatic-overhaul.piggy_bank": "Свинка-скарбничка",
   "gui.numismatic-overhaul.shop.price": "Ціна",
+  "gui.numismatic-overhaul.shop.extract": "Вилучити",
   "gui.numismatic-overhaul.shop.inventory_title": "Інвентар крамниці",
   "gui.numismatic-overhaul.shop.merchant_title": "Крамниця",
   "gui.numismatic-overhaul.shop.transfer_tooltip.enabled": [

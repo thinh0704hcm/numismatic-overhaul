@@ -2,41 +2,46 @@ package com.glisco.numismaticoverhaul.client.gui;
 
 import com.glisco.numismaticoverhaul.NumismaticOverhaul;
 import com.glisco.numismaticoverhaul.block.PiggyBankScreenHandler;
-import io.wispforest.owo.ui.base.BaseUIModelHandledScreen;
-import io.wispforest.owo.ui.component.LabelComponent;
-import io.wispforest.owo.ui.component.TextureComponent;
-import io.wispforest.owo.ui.container.FlowLayout;
-import io.wispforest.owo.ui.core.Sizing;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.player.Inventory;
 
-public class PiggyBankScreen extends BaseUIModelHandledScreen<FlowLayout, PiggyBankScreenHandler> {
+public class PiggyBankScreen extends AbstractContainerScreen<PiggyBankScreenHandler> {
 
-    private TextureComponent bronzeHint, silverHint, goldHint;
+    private static final Identifier TEXTURE = NumismaticOverhaul.id("textures/gui/piggy_bank.png");
 
-    public PiggyBankScreen(PiggyBankScreenHandler handler, PlayerInventory inventory, Text title) {
-        super(handler, inventory, title, FlowLayout.class, NumismaticOverhaul.id("piggy_bank"));
-        this.backgroundHeight = 145;
-        this.playerInventoryTitleY = this.backgroundHeight - 94;
-        this.titleX = (this.backgroundWidth - MinecraftClient.getInstance().textRenderer.getWidth(title)) / 2;
+    public PiggyBankScreen(PiggyBankScreenHandler handler, Inventory playerInventory, Component title) {
+        super(handler, playerInventory, title, 176, 166);
+        this.inventoryLabelY = this.imageHeight - 94;
+        this.titleLabelX = (this.imageWidth - Minecraft.getInstance().font.width(title)) / 2;
     }
 
     @Override
-    protected void build(FlowLayout rootComponent) {
-        this.uiAdapter.rootComponent.childById(LabelComponent.class, "piggy-title").text(title);
-        this.bronzeHint = this.uiAdapter.rootComponent.childById(TextureComponent.class, "bronze-hint");
-        this.silverHint = this.uiAdapter.rootComponent.childById(TextureComponent.class, "silver-hint");
-        this.goldHint = this.uiAdapter.rootComponent.childById(TextureComponent.class, "gold-hint");
-    }
+    public void extractContents(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractContents(context, mouseX, mouseY, delta);
 
-    @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
+        int x = this.leftPos;
+        int y = this.topPos;
 
-        this.bronzeHint.sizing(this.handler.getSlot(0).hasStack() ? Sizing.fixed(0) : Sizing.fixed(16));
-        this.silverHint.sizing(this.handler.getSlot(1).hasStack() ? Sizing.fixed(0) : Sizing.fixed(16));
-        this.goldHint.sizing(this.handler.getSlot(2).hasStack() ? Sizing.fixed(0) : Sizing.fixed(16));
+        // Draw full background (176x166 region from the 256x256 texture)
+        context.blit(RenderPipelines.GUI_TEXTURED, TEXTURE, x, y, 0.0f, 0.0f, this.imageWidth, this.imageHeight, 256, 256);
+
+        // Draw coin slot hints when slots are empty
+        // Bronze hint: texture region (0, 145) 16x16
+        if (!this.menu.getSlot(0).hasItem()) {
+            context.blit(RenderPipelines.GUI_TEXTURED, TEXTURE, x + 62, y + 26, 0.0f, 145.0f, 16, 16, 256, 256);
+        }
+        // Silver hint: texture region (16, 145) 16x16
+        if (!this.menu.getSlot(1).hasItem()) {
+            context.blit(RenderPipelines.GUI_TEXTURED, TEXTURE, x + 80, y + 26, 16.0f, 145.0f, 16, 16, 256, 256);
+        }
+        // Gold hint: texture region (32, 145) 16x16
+        if (!this.menu.getSlot(2).hasItem()) {
+            context.blit(RenderPipelines.GUI_TEXTURED, TEXTURE, x + 98, y + 26, 32.0f, 145.0f, 16, 16, 256, 256);
+        }
     }
 }

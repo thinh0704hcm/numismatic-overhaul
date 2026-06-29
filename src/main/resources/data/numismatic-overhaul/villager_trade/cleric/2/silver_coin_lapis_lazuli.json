@@ -1,0 +1,13 @@
+{
+  "max_uses": 16.0,
+  "reputation_discount": 0.05,
+  "xp": 5.0,
+  "wants": {
+    "id": "numismatic-overhaul:silver_coin",
+    "count": 8.0
+  },
+  "gives": {
+    "id": "minecraft:lapis_lazuli",
+    "count": 4.0
+  }
+}

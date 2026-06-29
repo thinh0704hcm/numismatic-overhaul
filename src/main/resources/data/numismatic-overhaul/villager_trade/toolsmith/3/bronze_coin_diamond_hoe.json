@@ -1,0 +1,13 @@
+{
+  "max_uses": 1.0,
+  "reputation_discount": 0.05,
+  "xp": 5.0,
+  "wants": {
+    "id": "numismatic-overhaul:bronze_coin",
+    "count": 5540.0
+  },
+  "gives": {
+    "id": "minecraft:diamond_hoe",
+    "count": 1.0
+  }
+}

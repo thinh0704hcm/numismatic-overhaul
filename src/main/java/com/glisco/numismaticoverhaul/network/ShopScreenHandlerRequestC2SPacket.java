@@ -1,21 +1,50 @@
 package com.glisco.numismaticoverhaul.network;
 
 import com.glisco.numismaticoverhaul.block.ShopScreenHandler;
-import io.wispforest.owo.network.ServerAccess;
+import com.glisco.numismaticoverhaul.NumismaticOverhaul;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
-public record ShopScreenHandlerRequestC2SPacket(Action action, long value) {
+public record ShopScreenHandlerRequestC2SPacket(Action action, long value) implements CustomPacketPayload {
+    public static final CustomPacketPayload.Type<ShopScreenHandlerRequestC2SPacket> ID = new CustomPacketPayload.Type<>(NumismaticOverhaul.id("shop_screen_handler_request"));
+    public static final StreamCodec<FriendlyByteBuf, ShopScreenHandlerRequestC2SPacket> CODEC = new StreamCodec<>() {
+        @Override
+        public void encode(FriendlyByteBuf buf, ShopScreenHandlerRequestC2SPacket packet) {
+            packet.write(buf);
+        }
+        @Override
+        public ShopScreenHandlerRequestC2SPacket decode(FriendlyByteBuf buf) {
+            return ShopScreenHandlerRequestC2SPacket.read(buf);
+        }
+    };
 
     public ShopScreenHandlerRequestC2SPacket(Action action) {
         this(action, 0);
     }
 
-    public static void handle(ShopScreenHandlerRequestC2SPacket message, ServerAccess access) {
-        final var player = access.player();
-        final long value = message.value();
+    @Override
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+        return ID;
+    }
 
-        if (!(player.currentScreenHandler instanceof ShopScreenHandler shopHandler)) return;
+    public void write(FriendlyByteBuf buf) {
+        buf.writeEnum(action);
+        buf.writeLong(value);
+    }
 
-        switch (message.action()) {
+    public static ShopScreenHandlerRequestC2SPacket read(FriendlyByteBuf buf) {
+        Action action = buf.readEnum(Action.class);
+        long value = buf.readLong();
+        return new ShopScreenHandlerRequestC2SPacket(action, value);
+    }
+
+    public static void handle(ShopScreenHandlerRequestC2SPacket packet, ServerPlayNetworking.Context ctx) {
+        var player = ctx.player();
+        var value = packet.value();
+        if (!(player.containerMenu instanceof ShopScreenHandler shopHandler)) return;
+        switch (packet.action()) {
             case LOAD_OFFER -> shopHandler.loadOffer(value);
             case CREATE_OFFER -> shopHandler.createOffer(value);
             case DELETE_OFFER -> shopHandler.deleteOffer();
@@ -25,8 +54,9 @@ public record ShopScreenHandlerRequestC2SPacket(Action action, long value) {
         }
     }
 
+
+
     public enum Action {
         CREATE_OFFER, DELETE_OFFER, LOAD_OFFER, EXTRACT_CURRENCY, TOGGLE_TRANSFER, CLICK_BUFFER
     }
-
 }

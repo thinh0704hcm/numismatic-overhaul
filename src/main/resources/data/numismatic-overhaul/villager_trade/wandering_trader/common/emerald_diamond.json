@@ -1,0 +1,17 @@
+{
+  "max_uses": 4.0,
+  "reputation_discount": 0.05,
+  "xp": 5.0,
+  "wants": {
+    "id": "minecraft:emerald",
+    "count": 1.0
+  },
+  "additional_wants": {
+    "id": "numismatic-overhaul:silver_coin",
+    "count": 50.0
+  },
+  "gives": {
+    "id": "minecraft:diamond",
+    "count": 1.0
+  }
+}

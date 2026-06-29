@@ -4,441 +4,395 @@ import com.glisco.numismaticoverhaul.block.ShopOffer;
 import com.glisco.numismaticoverhaul.block.ShopScreenHandler;
 import com.glisco.numismaticoverhaul.currency.CurrencyResolver;
 import com.glisco.numismaticoverhaul.network.UpdateShopScreenS2CPacket;
-import io.wispforest.owo.ops.TextOps;
-import io.wispforest.owo.ui.base.BaseOwoHandledScreen;
-import io.wispforest.owo.ui.component.*;
-import io.wispforest.owo.ui.container.*;
-import io.wispforest.owo.ui.core.*;
-import io.wispforest.owo.ui.parsing.UIParsing;
-import io.wispforest.owo.ui.util.UISounds;
-import net.fabricmc.fabric.api.client.rendering.v1.TooltipComponentCallback;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.tooltip.TooltipComponent;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.*;
-import net.minecraft.item.tooltip.TooltipType;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import org.jetbrains.annotations.NotNull;
-import org.lwjgl.glfw.GLFW;
-import java.util.*;
-import java.util.function.Consumer;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import static com.glisco.numismaticoverhaul.NumismaticOverhaul.id;
-import static io.wispforest.owo.ui.container.Containers.*;
 
-public class ShopScreen extends BaseOwoHandledScreen<FlowLayout, ShopScreenHandler> {
+public class ShopScreen extends AbstractContainerScreen<ShopScreenHandler> {
 
-    public static final Identifier TEXTURE_PNG = id("textures/gui/shop_gui.png");
-    public static final Identifier TRADES_TEXTURE = id("textures/gui/shop_gui_trades.png");
+    private static final Identifier TEXTURE = id("textures/gui/shop_gui.png");
+    private static final Identifier TRADES_TEXTURE = id("textures/gui/shop_gui_trades.png");
 
-    private final List<ButtonWidget> tabButtons = new ArrayList<>();
+    private int selectedTab = 0;
     private final List<ShopOffer> offers = new ArrayList<>();
+    private long storedCurrency = 0;
+    private boolean transferEnabled = false;
+    private int scrollOffset = 0;
+    private ItemStack bufferStack = ItemStack.EMPTY;
 
-    private Runnable afterDataUpdate = () -> {
-    };
-    private Consumer<String> priceDisplay = s -> {
-    };
-    private int tab = 0;
+    private int rpX;
 
-    public ShopScreen(ShopScreenHandler handler, PlayerInventory inventory, Text title) {
-        super(handler, inventory, title);
-        this.playerInventoryTitleY += 1;
-        this.titleY = 5;
+    private Button storageTabBtn;
+    private Button tradeTabBtn;
+    private Button extractBtn;
+    private Button transferToggleBtn;
+    private EditBox priceField;
+    private Button submitBtn;
+    private Button deleteBtn;
+
+    public ShopScreen(ShopScreenHandler handler, Inventory playerInventory, Component title) {
+        super(handler, playerInventory, title, 416, 180);
+        this.titleLabelY = 5;
+        this.titleLabelX = 8;
+        this.inventoryLabelX = 8;
+        this.inventoryLabelY = this.imageHeight - 94;
     }
 
     @Override
-    protected @NotNull OwoUIAdapter<FlowLayout> createAdapter() {
-        return OwoUIAdapter.create(this, (sizing, sizing2) -> {
-            var root = verticalFlow(sizing, sizing2);
-            root.alignment(HorizontalAlignment.CENTER, VerticalAlignment.CENTER);
-            root.surface(Surface.VANILLA_TRANSLUCENT);
-            return root;
-        });
+    protected void init() {
+        super.init();
+        this.rpX = this.leftPos + 180;
+
+        // Tab buttons
+        this.storageTabBtn = Button.builder(Component.empty(), b -> selectTab(0))
+                .bounds(rpX + 2, topPos + 4, 50, 14).build();
+        this.tradeTabBtn = Button.builder(Component.empty(), b -> selectTab(1))
+                .bounds(rpX + 2, topPos + 22, 50, 14).build();
+        this.addRenderableWidget(this.storageTabBtn);
+        this.addRenderableWidget(this.tradeTabBtn);
+
+        // Extract button (tab 0)
+        this.extractBtn = Button.builder(Component.translatable("gui.numismatic-overhaul.shop.extract"), b -> this.menu.extractCurrency())
+                .bounds(rpX + 2, topPos + 60, 90, 14).build();
+        this.addRenderableWidget(this.extractBtn);
+
+        // Transfer toggle (always visible)
+        this.transferToggleBtn = Button.builder(Component.empty(), b -> this.menu.toggleTransfer())
+                .bounds(rpX + 2, topPos + 80, 90, 14).build();
+        this.transferToggleBtn.setTooltip(Tooltip.create(
+                Component.translatable("gui.numismatic-overhaul.shop.transfer_tooltip.disabled")));
+        this.addRenderableWidget(this.transferToggleBtn);
+
+        // Price field — digit-only EditBox (tab 1)
+        this.priceField = new EditBox(this.font, rpX + 2, topPos + 16, 90, 12, Component.empty()) {
+            @Override
+            public boolean charTyped(CharacterEvent event) {
+                if (Character.isDigit(event.codepoint())) {
+                    return super.charTyped(event);
+                }
+                return false;
+            }
+        };
+        this.priceField.setMaxLength(7);
+        this.priceField.setVisible(false);
+        this.priceField.active = false;
+        this.priceField.setResponder(s -> updateEditorButtons());
+        this.addRenderableWidget(this.priceField);
+
+        // Submit button (tab 1)
+        this.submitBtn = Button.builder(Component.literal("Submit"), b -> {
+            String val = this.priceField.getValue();
+            if (!val.isBlank()) {
+                try {
+                    this.menu.createOffer(Long.parseLong(val));
+                } catch (NumberFormatException ignored) {}
+            }
+        }).bounds(rpX + 2, topPos + 68, 44, 14).build();
+        this.submitBtn.visible = false;
+        this.submitBtn.active = false;
+        this.addRenderableWidget(this.submitBtn);
+
+        // Delete button (tab 1)
+        this.deleteBtn = Button.builder(Component.literal("Delete"), b -> this.menu.deleteOffer())
+                .bounds(rpX + 48, topPos + 68, 44, 14).build();
+        this.deleteBtn.visible = false;
+        this.deleteBtn.active = false;
+        this.addRenderableWidget(this.deleteBtn);
+
+        updateVisibility();
+    }
+
+    // ─── Tab Management ────────────────────────────────────────
+
+    private void updateVisibility() {
+        boolean storage = selectedTab == 0;
+        this.storageTabBtn.active = !storage;
+        this.tradeTabBtn.active = storage;
+
+        this.extractBtn.visible = storage;
+        this.extractBtn.active = storage;
+
+        this.transferToggleBtn.visible = true;
+        this.transferToggleBtn.active = true;
+
+        this.priceField.setVisible(!storage);
+        this.priceField.active = !storage;
+
+        this.submitBtn.visible = !storage;
+        this.submitBtn.active = false;
+        this.deleteBtn.visible = !storage;
+        this.deleteBtn.active = false;
+    }
+
+    private void selectTab(int index) {
+        if (this.selectedTab == index) return;
+        this.selectedTab = index;
+        this.scrollOffset = 0;
+        this.titleLabelY = (index == 0) ? 5 : 69420;
+        updateVisibility();
+        updateEditorButtons();
+    }
+
+    public int tab() {
+        return this.selectedTab;
+    }
+
+    // ─── Rendering ─────────────────────────────────────────────
+
+    @Override
+    public void extractContents(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        // Draw custom background (do NOT call super.extractContents — it would stretch to 416x180)
+        Identifier bg = selectedTab == 0 ? TEXTURE : TRADES_TEXTURE;
+        context.blit(RenderPipelines.GUI_TEXTURED, bg, leftPos, topPos,
+                0.0f, 0.0f, 176, 168, 256, 256);
+
+        // Draw vanilla slots
+        this.extractSlots(context, mouseX, mouseY);
+
+        // Right panel background
+        context.fill(rpX - 4, topPos, rpX + 100, topPos + imageHeight, 0xE0101010);
+
+        // Tab labels in right panel
+        context.text(this.font, "Storage", rpX + 16, topPos + 8,
+                selectedTab == 0 ? 0xFFFF55 : 0xAAAAAA, false);
+        context.text(this.font, "Trades", rpX + 18, topPos + 26,
+                selectedTab == 1 ? 0xFFFF55 : 0xAAAAAA, false);
+
+        if (selectedTab == 0) {
+            renderStorageTab(context);
+        } else {
+            renderTradesTab(context, mouseX, mouseY);
+        }
+
+        renderTransferIndicator(context);
+    }
+
+    private void renderStorageTab(GuiGraphicsExtractor context) {
+        long[] currency = CurrencyResolver.splitValues(this.storedCurrency);
+        int y = topPos + 44;
+        context.text(this.font, "Stored:", rpX + 2, y, 0xFFFFFF, false);
+        context.text(this.font, "Gold: " + currency[2], rpX + 2, y + 12, 0xFFD700, false);
+        context.text(this.font, "Silver: " + currency[1], rpX + 2, y + 24, 0xC0C0C0, false);
+        context.text(this.font, "Bronze: " + currency[0], rpX + 2, y + 36, 0xCD7F32, false);
+    }
+
+    private void renderTradesTab(GuiGraphicsExtractor context, int mouseX, int mouseY) {
+        // ── Offer list ──
+        int listX = leftPos + 4;
+        int listY = topPos + 4;
+        int listW = 168;
+        int listH = 60;
+        context.fill(listX, listY, listX + listW, listY + listH, 0xE0101010);
+
+        int maxVisible = 5;
+        int end = Math.min(this.scrollOffset + maxVisible, this.offers.size());
+
+        for (int i = this.scrollOffset; i < end; i++) {
+            int row = i - this.scrollOffset;
+            int itemY = listY + 2 + row * 12;
+
+            boolean hovered = mouseX >= listX && mouseX < listX + listW
+                    && mouseY >= itemY && mouseY < itemY + 12;
+            if (hovered) {
+                context.fill(listX, itemY, listX + listW, itemY + 12, 0x40FFFFFF);
+            }
+
+            ShopOffer offer = this.offers.get(i);
+            context.item(offer.getSellStack(), listX + 2, itemY);
+            context.text(this.font, String.valueOf(offer.getPrice()),
+                    listX + 20, itemY + 2, 0x898989, false);
+        }
+
+        if (this.offers.size() > maxVisible) {
+            context.text(this.font,
+                    (this.scrollOffset + 1) + "/" + this.offers.size(),
+                    listX + listW - 40, listY + listH + 2, 0xAAAAAA, false);
+        }
+
+        // ── Editor section ──
+        int ey = topPos + 44;
+        context.text(this.font, "Price:", rpX + 2, ey, 0xFFFFFF, false);
+
+        // Buffer slot
+        if (!this.bufferStack.isEmpty()) {
+            int bx = rpX + 2;
+            int by = ey + 14;
+            context.fill(bx - 1, by - 1, bx + 17, by + 17, 0xFF373737);
+            context.item(this.bufferStack, bx, by);
+            context.itemDecorations(this.font, this.bufferStack, bx, by);
+        }
+
+        // Currency breakdown for current price
+        String priceText = this.priceField.getValue();
+        if (!priceText.isBlank()) {
+            try {
+                long price = Long.parseLong(priceText);
+                long[] split = CurrencyResolver.splitValues(price);
+                context.text(this.font,
+                        split[2] + "G " + split[1] + "S " + split[0] + "B",
+                        rpX + 20, ey + 18, 0x898989, false);
+            } catch (NumberFormatException ignored) {}
+        }
+    }
+
+    private void renderTransferIndicator(GuiGraphicsExtractor context) {
+        int y = topPos + 140;
+        String label = this.transferEnabled ? "Transfer: ON" : "Transfer: OFF";
+        int color = this.transferEnabled ? 0x28FFBF : 0xEB1D36;
+        context.text(this.font, label, rpX + 2, y, color, false);
+    }
+
+    // ─── Post-render (tooltips) ────────────────────────────────
+
+    @Override
+    public void extractTooltip(GuiGraphicsExtractor context, int mouseX, int mouseY) {
+        super.extractTooltip(context, mouseX, mouseY);
+
+        // Offer item tooltips
+        if (selectedTab == 1) {
+            int listX = leftPos + 4;
+            int listY = topPos + 4;
+            int maxVisible = 5;
+            int end = Math.min(this.scrollOffset + maxVisible, this.offers.size());
+
+            for (int i = this.scrollOffset; i < end; i++) {
+                int row = i - this.scrollOffset;
+                int itemY = listY + 2 + row * 12;
+                if (mouseX >= listX + 2 && mouseX < listX + 18
+                        && mouseY >= itemY && mouseY < itemY + 14) {
+                    context.setTooltipForNextFrame(this.font,
+                            this.offers.get(i).getSellStack(), mouseX, mouseY);
+                }
+            }
+
+            // Buffer item tooltip
+            if (!this.bufferStack.isEmpty()) {
+                int bx = rpX + 2;
+                int by = topPos + 58;
+                if (mouseX >= bx && mouseX < bx + 16
+                        && mouseY >= by && mouseY < by + 16) {
+                    context.setTooltipForNextFrame(this.font,
+                            this.bufferStack, mouseX, mouseY);
+                }
+            }
+        }
+    }
+
+    // ─── Input Handling ────────────────────────────────────────
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (selectedTab == 1 && event.button() == 0) {
+            double mx = event.x();
+            double my = event.y();
+
+            // Offer list click
+            int listX = leftPos + 4;
+            int listY = topPos + 4;
+            int listW = 168;
+            int listH = 60;
+
+            if (mx >= listX && mx < listX + listW && my >= listY && my < listY + listH) {
+                int maxVisible = 5;
+                int row = (int) ((my - listY - 2) / 12);
+                int offerIndex = this.scrollOffset + row;
+                if (offerIndex >= 0 && offerIndex < this.offers.size()) {
+                    ShopOffer offer = this.offers.get(offerIndex);
+                    this.menu.loadOffer(offerIndex);
+                    this.priceField.setValue(String.valueOf(offer.getPrice()));
+                    return true;
+                }
+            }
+
+            // Buffer slot click
+            int bx = rpX + 2;
+            int by = topPos + 58;
+            if (mx >= bx && mx < bx + 16 && my >= by && my < by + 16) {
+                this.menu.handleBufferClick();
+                return true;
+            }
+        }
+        return super.mouseClicked(event, doubleClick);
     }
 
     @Override
-    protected void build(FlowLayout rootComponent) {
-        this.tabButtons.clear();
-        // Main shop screen
-        rootComponent
-            .child(
-                horizontalFlow(Sizing.content(), Sizing.content())
-                    .children(List.of(
-                            verticalFlow(Sizing.fixed(120), Sizing.content())
-                                .children(List.of(
-                                    makeTabButton(Items.CHEST, false, b -> this.selectTab(0)),
-                                    makeTabButton(Items.EMERALD, true, b -> this.selectTab(1))
-                                ))
-                                .horizontalAlignment(HorizontalAlignment.RIGHT)
-                                .padding(Insets.top(5))
-                                .allowOverflow(true)
-                                .id("left-column"),
-                            stack(Sizing.content(), Sizing.content())
-                                .child(createBackgroundTexture(TEXTURE_PNG)
-                                    .id("background-texture"))
-                                .id("background"),
-                            verticalFlow(Sizing.fixed(120), Sizing.content())
-                                .child(makeCurrencyWidget(button -> this.handler.extractCurrency()))
-                                .child(stack(Sizing.content(), Sizing.content())
-                                    .child(Components.item(Items.HOPPER.getDefaultStack())
-                                        .margins(Insets.of(6))
-                                    )
-                                    .child(Components.label(Text.empty())
-                                        .shadow(true)
-                                        .positioning(Positioning.absolute(15, 15))
-                                        .zIndex(150)
-                                        .id("transfer-label")
-                                    )
-                                    .child(verticalFlow(Sizing.fixed(28), Sizing.fixed(28))
-                                        .cursorStyle(CursorStyle.HAND)
-                                        .positioning(Positioning.absolute(0, 0))
-                                        .id("transfer-button")
-                                    )
-                                    .margins(Insets.top(3))
-                                    .surface(Surface.PANEL)
-                                )
-                                .horizontalAlignment(HorizontalAlignment.LEFT)
-                                .padding(Insets.left(2))
-                                .id("right-column")
-                        )
-                    )
-            );
-
-        // Utility
-        rootComponent.childById(FlowLayout.class, "transfer-button").mouseDown().subscribe((x, y, button) -> {
-            if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) return false;
-            this.handler.toggleTransfer();
-            UISounds.playInteractionSound();
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (selectedTab == 1) {
+            int maxVisible = 5;
+            int maxScroll = Math.max(0, this.offers.size() - maxVisible);
+            this.scrollOffset = Mth.clamp(
+                    this.scrollOffset - (int) verticalAmount, 0, maxScroll);
             return true;
-        });
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
-    @Override
-    protected boolean isClickOutsideBounds(double mouseX, double mouseY, int left, int top, int button) {
-        var buffer = this.component(ItemComponent.class, "trade-buffer");
-        if (buffer != null && buffer.isInBoundingBox(mouseX, mouseY)) return false;
-
-        return super.isClickOutsideBounds(mouseX, mouseY, left, top, button);
-    }
+    // ─── Data Update ───────────────────────────────────────────
 
     public void update(UpdateShopScreenS2CPacket data) {
-        if (this.uiAdapter == null) return;
-
-        long[] storedCurrency = CurrencyResolver.splitValues(data.storedCurrency());
-        this.component(LabelComponent.class, "bronze-count").text(Text.literal(String.valueOf(storedCurrency[0])));
-        this.component(LabelComponent.class, "silver-count").text(Text.literal(String.valueOf(storedCurrency[1])));
-        this.component(LabelComponent.class, "gold-count").text(Text.literal(String.valueOf(storedCurrency[2])));
+        this.storedCurrency = data.storedCurrency();
+        this.transferEnabled = data.transferEnabled();
 
         int prevOffers = this.offers.size();
         this.offers.clear();
         this.offers.addAll(data.offers());
 
-        if (this.tab == 1) this.populateTrades(this.tab);
-
-        if (this.tab == 1 && this.offers.size() > prevOffers) {
-            var offersScroll = this.component(ScrollContainer.class, "offer-container");
-            var leftColumn = offersScroll.childById(FlowLayout.class, "first-trades-column");
-
-            offersScroll.scrollTo(leftColumn.children().getLast());
+        // Auto-scroll to bottom when new offers arrive (tab 1)
+        if (selectedTab == 1 && this.offers.size() > prevOffers) {
+            int maxVisible = 5;
+            this.scrollOffset = Math.max(0, this.offers.size() - maxVisible);
         }
 
-        this.component(FlowLayout.class, "transfer-button").tooltip(
-            data.transferEnabled()
-                ? Text.translatable("gui.numismatic-overhaul.shop.transfer_tooltip.enabled")
-                : Text.translatable("gui.numismatic-overhaul.shop.transfer_tooltip.disabled")
-        );
-        this.component(LabelComponent.class, "transfer-label").text(
-            data.transferEnabled()
-                ? TextOps.withColor("✔", 0x28FFBF)
-                : TextOps.withColor("✘", 0xEB1D36)
-        );
+        this.bufferStack = data.tradeEditBuffer();
+        this.menu.setTradeEditBuffer(data.tradeEditBuffer());
 
-        this.afterDataUpdate();
+        // Update transfer tooltip
+        this.transferToggleBtn.setTooltip(Tooltip.create(
+                this.transferEnabled
+                        ? Component.translatable("gui.numismatic-overhaul.shop.transfer_tooltip.enabled")
+                        : Component.translatable("gui.numismatic-overhaul.shop.transfer_tooltip.disabled")));
+
+        updateEditorButtons();
     }
 
-    private Text computeTransferTooltip(boolean isTransferEnabled) {
-        return isTransferEnabled ? Text.translatable("gui.numismatic-overhaul.shop.transfer_tooltip.enabled") : Text.translatable("gui.numismatic-overhaul.shop.transfer_tooltip.disabled");
+    private void updateEditorButtons() {
+        if (this.submitBtn == null || this.deleteBtn == null) return;
+
+        String priceText = this.priceField.getValue();
+        boolean hasPrice = !priceText.isBlank() && parsePrice(priceText) > 0;
+        boolean hasBuffer = !this.bufferStack.isEmpty();
+        boolean hasOffer = hasOfferFor(this.bufferStack);
+
+        this.submitBtn.active = hasPrice && hasBuffer
+                && (this.offers.size() < 24 || hasOffer);
+        this.deleteBtn.active = hasOffer;
     }
 
-    public void afterDataUpdate() {
-        this.afterDataUpdate.run();
-    }
-
-    private void selectTab(int index) {
-        if (this.tab == index) return;
-
-        if (index == 0) {
-            this.swapBackgroundTexture(TEXTURE_PNG);
-            this.titleY = 5;
-
-            this.component(FlowLayout.class, "right-column").removeChild(this.component(FlowLayout.class, "trade-edit-widget"));
-            this.afterDataUpdate = () -> {
-            };
-            this.priceDisplay = s -> {
-            };
-        } else {
-            this.swapBackgroundTexture(TRADES_TEXTURE);
-            this.titleY = 69420;
-
-            this.uiAdapter.rootComponent.childById(StackLayout.class, "background")
-                .child(
-                    verticalScroll(Sizing.fixed(160), Sizing.fixed(60),
-                        horizontalFlow(Sizing.content(), Sizing.content())
-                            .child(verticalFlow(Sizing.content(), Sizing.content())
-                                .children(List.of())
-                                .id("first-trades-column"))
-                            .child(verticalFlow(Sizing.content(), Sizing.content())
-                                .children(List.of())
-                                .id("second-trades-column")
-                                .margins(Insets.left(4))
-                            )
-                    )
-                        .positioning(Positioning.absolute(8, 10))
-                        .id("offer-container")
-                );
-
-            final var editWidget = makeTradeEditWidget(this.handler.getBufferStack());
-            var submitButton = editWidget.childById(ButtonComponent.class, "submit-button");
-            var deleteButton = editWidget.childById(ButtonComponent.class, "delete-button");
-
-            var tradeBuffer = editWidget.childById(ItemComponent.class, "trade-buffer");
-            tradeBuffer.showOverlay(true);
-            tradeBuffer.mouseDown().subscribe((mouseX, mouseY, button) -> {
-                this.handler.handleBufferClick();
-                return true;
-            });
-
-            var priceField = editWidget.childById(TextFieldWidget.class, "price-field");
-            priceField.setMaxLength(7);
-            priceField.setTextPredicate(s -> s.matches("\\d*"));
-            priceField.setChangedListener(s -> {
-                this.afterDataUpdate();
-
-                var price = CurrencyResolver.splitValues(s.isBlank() ? 0 : Integer.parseInt(s));
-                this.component(LabelComponent.class, "offer-bronze-count").text(Text.literal(String.valueOf(price[0])));
-                this.component(LabelComponent.class, "offer-silver-count").text(Text.literal(String.valueOf(price[1])));
-                this.component(LabelComponent.class, "offer-gold-count").text(Text.literal(String.valueOf(price[2])));
-            });
-
-            submitButton.onPress((ButtonComponent button) -> this.handler.createOffer(Integer.parseInt(priceField.getText())));
-            deleteButton.onPress((ButtonComponent button) -> this.handler.deleteOffer());
-
-            this.priceDisplay = priceField::setText;
-            this.afterDataUpdate = () -> {
-                var priceText = priceField.getText();
-                var bufferStack = this.handler.getBufferStack();
-                boolean hasOffer = this.hasOfferFor(bufferStack);
-
-                submitButton.active = !priceText.isBlank()
-                    && Integer.parseInt(priceText) > 0
-                    && !bufferStack.isEmpty()
-                    && (this.offers.size() < 24 || hasOffer);
-                deleteButton.active = hasOffer;
-
-                tradeBuffer.stack(bufferStack);
-                if (!bufferStack.isEmpty()) {
-                    var tooltip = new ArrayList<TooltipComponent>();
-                    var client = MinecraftClient.getInstance();
-                    bufferStack.getTooltip(Item.TooltipContext.create(client.world), client.player, client.options.advancedItemTooltips ? TooltipType.ADVANCED : TooltipType.BASIC)
-                        .stream()
-                        .map(Text::asOrderedText)
-                        .map(TooltipComponent::of)
-                        .forEach(tooltip::add);
-                    bufferStack.getTooltipData().ifPresent(data -> {
-                        var fabricComponent = TooltipComponentCallback.EVENT.invoker().getComponent(data);
-                        tooltip.add(1, Objects.requireNonNullElseGet(fabricComponent, () -> TooltipComponent.of(data)));
-                    });
-                    tradeBuffer.tooltip(tooltip);
-                } else {
-                    tradeBuffer.tooltip((List<TooltipComponent>) null);
-                }
-            };
-
-            this.component(FlowLayout.class, "right-column").child(0, editWidget);
+    private long parsePrice(String s) {
+        try {
+            return Long.parseLong(s);
+        } catch (NumberFormatException e) {
+            return 0;
         }
-
-        this.populateTrades(index);
-        for (int i = 0; i < this.tabButtons.size(); i++) {
-            this.tabButtons.get(i).active = i != index;
-        }
-
-        this.tab = index;
     }
 
     private boolean hasOfferFor(ItemStack stack) {
-        return this.offers.stream().anyMatch(offer -> ItemStack.areItemsEqual(stack, offer.getSellStack()));
-    }
-
-    private void populateTrades(int tab) {
-        var firstColumn = this.component(FlowLayout.class, "first-trades-column");
-        var secondColumn = this.component(FlowLayout.class, "second-trades-column");
-
-        firstColumn.clearChildren();
-        secondColumn.clearChildren();
-
-        if (tab == 0) return;
-
-        for (int i = 0; i < this.offers.size(); i++) {
-            var offer = this.offers.get(i);
-
-            var tradeComponent = makeTradeButton(offer.getSellStack(), offer.getPrice(), i);
-            (i % 2 == 0 ? firstColumn : secondColumn).child(tradeComponent);
-        }
-    }
-
-    private void swapBackgroundTexture(Identifier newTexture) {
-        this.uiAdapter.rootComponent.childById(TextureComponent.class, "background-texture").remove();
-        this.uiAdapter.rootComponent.childById(StackLayout.class, "background").child(createBackgroundTexture(newTexture));
-    }
-
-    private TextureComponent createBackgroundTexture(Identifier id) {
-        var bg = Components.texture(id, 0, 0, 176, 168);
-        bg.id("background-texture");
-        return bg;
-    }
-
-    private StackLayout makeTabButton(Item icon, boolean active, Consumer<ButtonComponent> onPress) {
-        var buttonLayout = stack(Sizing.content(), Sizing.content());
-        buttonLayout
-            .child(
-                Components.item(icon.getDefaultStack()).positioning(Positioning.absolute(9, 6)))
-            .child(Components.button(Text.empty(), onPress)
-                .active(active)
-                .renderer(ButtonComponent.Renderer.texture(TEXTURE_PNG, 113, 168, 256, 256))
-                .sizing(Sizing.fixed(32), Sizing.fixed(28))
-                .margins(Insets.right(-3))
-                .id("tab-button")
-            )
-            .margins(Insets.bottom(4))
-            .allowOverflow(true);
-
-        var button = buttonLayout.childById(ButtonComponent.class, "tab-button");
-        this.tabButtons.add(button);
-
-        return buttonLayout;
-    }
-
-    private StackLayout makeCurrencyWidget(Consumer<ButtonComponent> onPress) {
-        var currencyComponent = stack(Sizing.content(), Sizing.content());
-        currencyComponent
-            .child(Components.texture(TEXTURE_PNG, 146, 169, 34, 54))
-            .child(Components.label(Text.literal("0")).positioning(Positioning.absolute(5, 7)).id("gold-count"))
-            .child(Components.label(Text.literal("0")).positioning(Positioning.absolute(5, 19)).id("silver-count"))
-            .child(Components.label(Text.literal("0")).positioning(Positioning.absolute(5, 31)).id("bronze-count"))
-            .child(Components.button(Text.empty(), onPress)
-                .renderer(ButtonComponent.Renderer.texture(TEXTURE_PNG, 146, 224, 256, 256))
-                .sizing(Sizing.fixed(26), Sizing.fixed(8))
-                .positioning(Positioning.absolute(4, 41))
-            );
-        return currencyComponent;
-    }
-
-    private FlowLayout makeTradeButton(ItemStack tradeItem, long price, int offerIndex) {
-        var tradeButton = horizontalFlow(Sizing.content(), Sizing.content());
-        tradeButton
-            .child(Components.button(Text.empty(), button -> {
-                        this.handler.loadOffer(offerIndex);
-                        this.priceDisplay.accept(String.valueOf(price));
-                    })
-                    .sizing(Sizing.fixed(78), Sizing.content())
-                    .id("trade-button")
-            )
-            .child(horizontalFlow(Sizing.content(), Sizing.fixed(20))
-                .children(List.of(
-                    Components.item(tradeItem)
-                        .showOverlay(true)
-                        .cursorStyle(CursorStyle.HAND)
-                        .id("item-display")
-                    ,
-                    Components.texture(TEXTURE_PNG, 1, 172, 5, 7).margins(Insets.left(3)),
-                    Components.label(Text.literal(String.valueOf(price)))
-                        .shadow(true)
-                        .cursorStyle(CursorStyle.HAND)
-                        .margins(Insets.left(2))
-                        .id("price-label")
-                ))
-                .verticalAlignment(VerticalAlignment.CENTER)
-                .padding(Insets.left(4))
-                .positioning(Positioning.absolute(0, 0))
-            );
-        return tradeButton;
-    }
-
-    private FlowLayout makeTradeEditWidget(ItemStack tradeStack) {
-        var editorWidget = horizontalFlow(Sizing.content(), Sizing.content());
-        var priceFieldComponent = Components.textBox(Sizing.fixed(47));
-        priceFieldComponent
-            .verticalSizing(Sizing.fixed(11))
-            .positioning(Positioning.absolute(35, 18))
-            .id("price-field");
-        priceFieldComponent.setDrawsBackground(false);
-        editorWidget.children(List.of(
-            Components.texture(TEXTURE_PNG, 15, 169, 98, 54),
-            new FakeSlotComponent(tradeStack)
-                .showOverlay(true)
-                .positioning(Positioning.absolute(8, 15))
-                .id("trade-buffer"),
-            Components.button(Text.empty(), buttonComponent -> {
-                })
-                .active(false)
-                .renderer(ButtonComponent.Renderer.texture(TEXTURE_PNG, 15, 223, 256, 256))
-                .sizing(Sizing.fixed(41), Sizing.fixed(11))
-                .positioning(Positioning.absolute(7, 36))
-                .id("submit-button"),
-            Components.button(Text.empty(), buttonComponent -> {
-                })
-                .renderer(ButtonComponent.Renderer.texture(TEXTURE_PNG, 56, 223, 256, 256))
-                .active(false)
-                .sizing(Sizing.fixed(41), Sizing.fixed(11))
-                .positioning(Positioning.absolute(50, 36))
-                .id("delete-button"),
-            priceFieldComponent,
-            horizontalFlow(Sizing.content(), Sizing.content())
-                .children(List.of(
-                    Components.label(Text.literal("0"))
-                        .color(Color.ofRgb(0x898989))
-                        .horizontalSizing(Sizing.fixed(12))
-                        .id("offer-bronze-count"),
-                    Components.label(Text.literal("0"))
-                        .color(Color.ofRgb(0x898989))
-                        .margins(Insets.left(8))
-                        .horizontalSizing(Sizing.fixed(12))
-                        .id("offer-silver-count"),
-                    Components.label(Text.literal("0"))
-                        .color(Color.ofRgb(0x898989))
-                        .margins(Insets.left(8))
-                        .horizontalSizing(Sizing.fixed(18))
-                        .id("offer-gold-count")
-                ))
-                .positioning(Positioning.absolute(36, 5))
-        ));
-        editorWidget.margins(Insets.bottom(3));
-        editorWidget.id("trade-edit-widget");
-        return editorWidget;
-    }
-
-    public int tab() {
-        return this.tab;
-    }
-
-    public static class FakeSlotComponent extends ItemComponent {
-
-        protected FakeSlotComponent(ItemStack stack) {
-            super(stack);
-        }
-
-        @Override
-        public boolean shouldDrawTooltip(double mouseX, double mouseY) {
-            var player = MinecraftClient.getInstance().player;
-            if (player == null) return false;
-            return (player.currentScreenHandler == null || player.currentScreenHandler.getCursorStack().isEmpty()) && super.shouldDrawTooltip(mouseX, mouseY);
-        }
-    }
-
-    static {
-        UIParsing.registerFactory(id("fake-slot"), element -> new FakeSlotComponent(ItemStack.EMPTY));
+        return this.offers.stream()
+                .anyMatch(offer -> ItemStack.isSameItem(stack, offer.getSellStack()));
     }
 }

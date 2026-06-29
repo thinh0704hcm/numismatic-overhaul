@@ -1,0 +1,17 @@
+{
+  "max_uses": 16.0,
+  "reputation_discount": 0.05,
+  "xp": 5.0,
+  "wants": {
+    "id": "minecraft:cobblestone",
+    "count": 16.0
+  },
+  "additional_wants": {
+    "id": "numismatic-overhaul:silver_coin",
+    "count": 3.0
+  },
+  "gives": {
+    "id": "minecraft:chiseled_stone_bricks",
+    "count": 10.0
+  }
+}

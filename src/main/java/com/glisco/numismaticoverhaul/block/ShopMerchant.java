@@ -1,13 +1,16 @@
 package com.glisco.numismaticoverhaul.block;
 
 import com.glisco.numismaticoverhaul.currency.CurrencyHelper;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.s2c.play.SetTradeOffersS2CPacket;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.sound.SoundEvent;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.village.*;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.protocol.game.ClientboundMerchantOffersPacket;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.entity.npc.*;
+import net.minecraft.world.item.trading.Merchant;
+import net.minecraft.world.item.trading.MerchantOffers;
+import net.minecraft.world.item.trading.MerchantOffer;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -16,8 +19,8 @@ public class ShopMerchant implements Merchant {
 
     private final ShopBlockEntity shop;
     private final boolean inexhaustible;
-    private TradeOfferList recipeList = new TradeOfferList();
-    private PlayerEntity customer;
+    private MerchantOffers recipeList = new MerchantOffers();
+    private Player tradingPlayer;
 
     public ShopMerchant(ShopBlockEntity blockEntity, boolean inexhaustible) {
         this.shop = blockEntity;
@@ -30,82 +33,88 @@ public class ShopMerchant implements Merchant {
     }
 
     @Override
-    public void setCustomer(@Nullable PlayerEntity customer) {
-        this.customer = customer;
-        this.shop.busy = customer != null;
+    public void setTradingPlayer(@Nullable Player player) {
+        this.tradingPlayer = player;
+        this.shop.busy = player != null;
     }
 
     @Nullable
     @Override
-    public PlayerEntity getCustomer() {
-        return customer;
+    public Player getTradingPlayer() {
+        return tradingPlayer;
     }
 
     @Override
-    public TradeOfferList getOffers() {
+    public MerchantOffers getOffers() {
         return recipeList;
     }
 
     @Override
-    public void setOffersFromServer(@Nullable TradeOfferList offers) {
+    public void overrideOffers(@Nullable MerchantOffers offers) {
         this.recipeList = offers;
     }
 
     @Override
-    public void trade(TradeOffer offer) {
-        offer.use();
+    public void notifyTrade(MerchantOffer offer) {
+        // Consume items
+        ItemStack costA = offer.getBaseCostA();
+        ItemStack costB = offer.getCostB();
+        offer.take(costA, costB);
         if (!this.inexhaustible) {
-            ShopOffer.remove(shop.getItems(), offer.getSellItem());
-
+            ShopOffer.remove(shop.getItems(), offer.getResult());
             this.updateTrades();
-            if (this.getCustomer() instanceof ServerPlayerEntity serverPlayer) {
-                serverPlayer.networkHandler.sendPacket(new SetTradeOffersS2CPacket(
-                        serverPlayer.currentScreenHandler.syncId,
+            if (this.getTradingPlayer() instanceof ServerPlayer serverPlayer) {
+                serverPlayer.connection.send(new ClientboundMerchantOffersPacket(
+                        serverPlayer.containerMenu.containerId,
                         this.recipeList,
                         0, 0, false, false
                 ));
             }
         }
-
         var items = new ArrayList<ItemStack>();
-        items.add(offer.getOriginalFirstBuyItem());
-        if (offer.getSecondBuyItem().isPresent()) {
-            items.add(offer.getSecondBuyItem().get().itemStack());
+        items.add(costA);
+        if (!costB.isEmpty()) {
+            items.add(costB);
         }
         shop.addCurrency(CurrencyHelper.getValue(items));
     }
 
     @Override
-    public void onSellingItem(ItemStack stack) {
-
+    public void notifyTradeUpdated(ItemStack stack) {
+        // No additional behavior needed
     }
 
     @Override
-    public int getExperience() {
+    public int getVillagerXp() {
         return 0;
     }
 
     @Override
-    public void setExperienceFromServer(int experience) {
-
+    public void overrideXp(int experience) {
+        // No behavior needed
     }
 
     @Override
-    public boolean isLeveledMerchant() {
+    public SoundEvent getNotifyTradeSound() {
+        return SoundEvents.VILLAGER_YES;
+    }
+
+    @Override
+    public boolean isClientSide() {
         return false;
     }
 
     @Override
-    public SoundEvent getYesSound() {
-        return SoundEvents.ENTITY_VILLAGER_YES;
-    }
-
-    @Override
-    public boolean isClient() {
-        return false;
+    public boolean stillValid(Player player) {
+        return true;
     }
 
     public ShopBlockEntity shop() {
         return this.shop;
+    }
+
+    @Override
+    public boolean showProgressBar() {
+        return false;
     }
 }

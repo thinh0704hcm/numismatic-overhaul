@@ -1,48 +1,61 @@
 package com.glisco.numismaticoverhaul.client;
 
 import com.glisco.numismaticoverhaul.block.ShopBlockEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.OverlayTexture;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.WorldRenderer;
-import net.minecraft.client.render.block.entity.BlockEntityRenderer;
-import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
-import net.minecraft.client.render.model.json.ModelTransformationMode;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.math.RotationAxis;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
+import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
+import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
+import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.client.renderer.item.ItemModelResolver;
+import net.minecraft.client.renderer.item.ItemStackRenderState;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
 
-public class ShopBlockEntityRender implements BlockEntityRenderer<ShopBlockEntity> {
+public class ShopBlockEntityRender implements BlockEntityRenderer<ShopBlockEntity, ShopBlockEntityRender.ShopRenderState> {
 
-    public ShopBlockEntityRender(BlockEntityRendererFactory.Context context) {
-        super();
+    private final ItemModelResolver itemModelResolver;
+
+    public ShopBlockEntityRender(BlockEntityRendererProvider.Context context) {
+        this.itemModelResolver = context.itemModelResolver();
     }
 
     @Override
-    public void render(ShopBlockEntity entity, float tickDelta, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, int overlay) {
+    public ShopRenderState createRenderState() {
+        return new ShopRenderState();
+    }
 
-        var client = MinecraftClient.getInstance();
-        var world = entity.getWorld();
+    @Override
+    public void extractRenderState(ShopBlockEntity blockEntity, ShopRenderState state, float tickDelta, Vec3 cameraPos, ModelFeatureRenderer.CrumblingOverlay breakProgress) {
+        BlockEntityRenderState.extractBase(blockEntity, state, breakProgress);
+        state.gameTime = blockEntity.getLevel() != null ? blockEntity.getLevel().getGameTime() : 0;
+        ItemStack item = blockEntity.getItemToRender();
+        if (!item.isEmpty()) {
+            this.itemModelResolver.updateForNonLiving(state.itemRenderState, item, ItemDisplayContext.FIXED, null);
+        }
+        // No need to clear; ItemStackRenderState defaults to empty
+    }
 
-        if (entity.getOffers().isEmpty() || world == null) return;
+    @Override
+    public void submit(ShopRenderState state, PoseStack matrices, SubmitNodeCollector nodeCollector, CameraRenderState camera) {
+        if (state.itemRenderState.isEmpty()) return;
+        matrices.pushPose();
+        matrices.translate(0.5, 0.75, 0.5);
+        long gameTime = state.gameTime;
+        matrices.mulPose(Axis.YP.rotationDegrees(gameTime % 360));
+        float bob = (float) Math.sin((gameTime % 60) / 60.0 * Math.PI * 2) * 0.05f;
+        matrices.translate(0.0, bob, 0.0);
+        matrices.scale(0.5f, 0.5f, 0.5f);
+        state.itemRenderState.submit(matrices, nodeCollector, 0xF000F0, OverlayTexture.NO_OVERLAY, -1);
+        matrices.popPose();
+    }
 
-        ItemStack toRender = entity.getItemToRender();
-        boolean isBlockItem = toRender.getItem() instanceof BlockItem;
-
-        int lightAbove = WorldRenderer.getLightmapCoordinates(world, entity.getPos().up());
-
-        matrices.push();
-        matrices.translate(0.5, isBlockItem ? 0.85 : 0.95, 0.5);
-
-        float scale = isBlockItem ? 0.95f : 0.85f;
-        matrices.scale(scale, scale, scale);
-
-        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees((float) (System.currentTimeMillis() / 20d % 360d)));
-
-        client.getItemRenderer().renderItem(toRender, ModelTransformationMode.GROUND, lightAbove, OverlayTexture.DEFAULT_UV, matrices, vertexConsumers, world, 0);
-
-        matrices.pop();
-
+    public static class ShopRenderState extends BlockEntityRenderState {
+        public final ItemStackRenderState itemRenderState = new ItemStackRenderState();
+        public long gameTime;
     }
 }

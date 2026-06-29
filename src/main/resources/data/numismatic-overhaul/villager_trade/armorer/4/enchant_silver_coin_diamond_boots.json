@@ -1,0 +1,25 @@
+{
+  "max_uses": 4.0,
+  "reputation_discount": 0.05,
+  "xp": 5.0,
+  "wants": {
+    "id": "numismatic-overhaul:silver_coin",
+    "count": 11.0
+  },
+  "gives": {
+    "id": "minecraft:diamond_boots",
+    "count": 1.0
+  },
+  "given_item_modifiers": [
+    {
+      "function": "minecraft:enchant_with_levels",
+      "levels": {
+        "type": "minecraft:uniform",
+        "min": 20.0,
+        "max": 25.0
+      },
+      "options": "#minecraft:prismatic_ridge",
+      "include_additional_cost_component": false
+    }
+  ]
+}

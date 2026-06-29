@@ -1,0 +1,13 @@
+{
+  "max_uses": 16.0,
+  "reputation_discount": 0.05,
+  "xp": 5.0,
+  "wants": {
+    "id": "minecraft:glass_pane",
+    "count": 12.0
+  },
+  "gives": {
+    "id": "numismatic-overhaul:bronze_coin",
+    "count": 50.0
+  }
+}

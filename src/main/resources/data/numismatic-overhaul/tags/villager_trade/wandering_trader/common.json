@@ -1,0 +1,13 @@
+{
+  "values": [
+    "numismatic-overhaul:wandering_trader/common/emerald_diamond",
+    "numismatic-overhaul:wandering_trader/common/silver_coin_gunpowder",
+    "numismatic-overhaul:wandering_trader/common/silver_coin_podzol",
+    "numismatic-overhaul:wandering_trader/common/silver_coin_packed_ice",
+    "numismatic-overhaul:wandering_trader/common/silver_coin_axolotl_bucket",
+    "numismatic-overhaul:wandering_trader/common/silver_coin_pufferfish_bucket",
+    "numismatic-overhaul:wandering_trader/common/silver_coin_tropical_fish_bucket",
+    "numismatic-overhaul:wandering_trader/common/silver_coin_blue_ice",
+    "numismatic-overhaul:wandering_trader/common/gold_coin_sculk_sensor"
+  ]
+}

@@ -1,7 +1,7 @@
 package com.glisco.numismaticoverhaul.currency;
 
 import com.glisco.numismaticoverhaul.item.NumismaticOverhaulItems;
-import net.minecraft.item.ItemStack;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -72,17 +72,17 @@ public class CurrencyConverter {
         List<ItemStack> output = new ArrayList<>();
 
         for (ItemStack stack : input) {
-            if (stack.getCount() <= stack.getMaxCount()) {
+            if (stack.getCount() <= stack.getMaxStackSize()) {
                 output.add(stack);
             } else {
-                for (int i = 0; i < stack.getCount() / stack.getMaxCount(); i++) {
+                for (int i = 0; i < stack.getCount() / stack.getMaxStackSize(); i++) {
                     ItemStack copy = stack.copy();
-                    copy.setCount(stack.getMaxCount());
+                    copy.setCount(stack.getMaxStackSize());
                     output.add(copy);
                 }
 
                 ItemStack copy = stack.copy();
-                copy.setCount(stack.getCount() % stack.getMaxCount());
+                copy.setCount(stack.getCount() % stack.getMaxStackSize());
                 output.add(copy);
             }
         }

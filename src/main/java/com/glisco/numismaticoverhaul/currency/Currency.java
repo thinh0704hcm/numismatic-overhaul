@@ -1,10 +1,10 @@
 package com.glisco.numismaticoverhaul.currency;
 
 import com.glisco.numismaticoverhaul.item.NumismaticOverhaulItems;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemConvertible;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.level.ItemLike;
 
-public enum Currency implements ItemConvertible {
+public enum Currency implements ItemLike {
     BRONZE {
         @Override
         public int getNameColor() {

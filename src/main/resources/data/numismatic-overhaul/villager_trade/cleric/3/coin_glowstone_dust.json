@@ -1,0 +1,17 @@
+{
+  "max_uses": 16.0,
+  "reputation_discount": 0.05,
+  "xp": 5.0,
+  "wants": {
+    "id": "numismatic-overhaul:silver_coin",
+    "count": 6.0
+  },
+  "gives": {
+    "id": "minecraft:glowstone_dust",
+    "count": 1.0
+  },
+  "merchant_predicate": {
+    "condition": "minecraft:in_dimension",
+    "dimension": "minecraft:the_nether"
+  }
+}

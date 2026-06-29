@@ -1,0 +1,13 @@
+{
+  "max_uses": 5.0,
+  "reputation_discount": 0.05,
+  "xp": 5.0,
+  "wants": {
+    "id": "numismatic-overhaul:bronze_coin",
+    "count": 420.0
+  },
+  "gives": {
+    "id": "minecraft:sea_pickle",
+    "count": 1.0
+  }
+}

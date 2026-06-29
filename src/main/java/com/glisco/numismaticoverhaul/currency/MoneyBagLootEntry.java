@@ -1,50 +1,43 @@
 package com.glisco.numismaticoverhaul.currency;
 
-import com.glisco.numismaticoverhaul.NumismaticOverhaul;
-import com.glisco.numismaticoverhaul.item.MoneyBagItem;
-import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
-import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.minecraft.item.ItemStack;
-import net.minecraft.loot.condition.LootCondition;
-import net.minecraft.loot.context.LootContext;
-import net.minecraft.loot.entry.LeafEntry;
-import net.minecraft.loot.entry.LootPoolEntryType;
-import net.minecraft.loot.function.LootFunction;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import com.glisco.numismaticoverhaul.item.MoneyBagItem;
+import net.minecraft.world.level.storage.loot.LootContext;
+import net.minecraft.world.level.storage.loot.entries.LootPoolSingletonContainer;
+import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
+
+
+import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import java.util.List;
 import java.util.function.Consumer;
 
-public class MoneyBagLootEntry extends LeafEntry {
-
-    public static final MapCodec<MoneyBagLootEntry> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
-            Codec.INT.optionalFieldOf("min", 0).forGetter(o -> o.min),
-            Codec.INT.fieldOf("max").forGetter(o -> o.max)
-    ).and(LeafEntry.addLeafFields(instance)).apply(instance, MoneyBagLootEntry::new));
+public class MoneyBagLootEntry extends LootPoolSingletonContainer {
+    public static final MapCodec<MoneyBagLootEntry> CODEC = MapCodec.unit(() -> new MoneyBagLootEntry(0, 0));
 
     private final int min;
     private final int max;
 
-    private MoneyBagLootEntry(int min, int max, int weight, int quality, List<LootCondition> conditions, List<LootFunction> functions) {
-        super(weight, quality, conditions, functions);
+    protected MoneyBagLootEntry(int min, int max) {
+        super(0, 0, List.of(), List.of());
         this.min = min;
         this.max = max;
     }
 
     @Override
-    protected void generateLoot(Consumer<ItemStack> lootConsumer, LootContext context) {
-        int value = MathHelper.nextInt(context.getRandom(), min, max);
-        if (value == 0) return;
-
-        lootConsumer.accept(MoneyBagItem.fromRawValue(value));
-    }
-
-    public static LeafEntry.Builder<?> builder(int min, int max) {
-        return builder((weight, quality, conditions, functions) -> new MoneyBagLootEntry(min, max, weight, quality, conditions, functions));
+    protected void createItemStack(Consumer<ItemStack> consumer, LootContext context) {
+        long amount = min + (long) (Math.random() * (max - min + 1));
+        if (amount <= 0) return;
+        consumer.accept(MoneyBagItem.fromRawValue(amount));
     }
 
     @Override
-    public LootPoolEntryType getType() {
-        return NumismaticOverhaul.MONEY_BAG_ENTRY;
+    public MapCodec<? extends LootPoolSingletonContainer> codec() {
+        return CODEC;
+    }
+
+    public static LootPoolSingletonContainer.Builder<?> builder(int min, int max) {
+        return simpleBuilder((weight, quality, conditions, functions) -> new MoneyBagLootEntry(min, max));
     }
 }

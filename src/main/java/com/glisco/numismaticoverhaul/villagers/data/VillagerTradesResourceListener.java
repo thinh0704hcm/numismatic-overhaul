@@ -1,56 +1,19 @@
 package com.glisco.numismaticoverhaul.villagers.data;
 
 import com.glisco.numismaticoverhaul.NumismaticOverhaul;
-import com.glisco.numismaticoverhaul.villagers.json.VillagerTradesHandler;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
-import net.fabricmc.fabric.api.resource.IdentifiableResourceReloadListener;
-import net.minecraft.resource.JsonDataLoader;
-import net.minecraft.resource.ResourceManager;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.Pair;
-import net.minecraft.util.profiler.Profiler;
-import net.minecraft.village.TradeOffers;
-import net.minecraft.village.VillagerProfession;
+import net.minecraft.server.packs.resources.PreparableReloadListener;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
-import java.util.HashMap;
-import java.util.Map;
-
-public class VillagerTradesResourceListener extends JsonDataLoader implements IdentifiableResourceReloadListener {
-
-    public VillagerTradesResourceListener() {
-        //Fortnite
-        super(new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().setLenient().create(), "villager_trades");
-    }
-
+/**
+ * Villager trades are now data-driven in MC 26.2.
+ * The TRADES map has been removed. This listener is stubbed until
+ * a new data-driven approach is implemented.
+ */
+public class VillagerTradesResourceListener implements PreparableReloadListener {
     @Override
-    public Identifier getFabricId() {
-        return NumismaticOverhaul.id("villager_data_loader");
-    }
-
-    @Override
-    protected void apply(Map<Identifier, JsonElement> loader, ResourceManager manager, Profiler profiler) {
-        if (!NumismaticOverhaul.CONFIG.enableVillagerTrading()) return;
-
-        NumismaticVillagerTradesRegistry.clearRegistries();
-
-        loader.forEach((identifier, jsonElement) -> {
-            if (!jsonElement.isJsonObject()) return;
-            JsonObject root = jsonElement.getAsJsonObject();
-            VillagerTradesHandler.loadProfession(identifier, root);
-        });
-
-        NumismaticVillagerTradesRegistry.wrapModVillagers();
-
-        final Pair<HashMap<VillagerProfession, Int2ObjectOpenHashMap<TradeOffers.Factory[]>>, Int2ObjectOpenHashMap<TradeOffers.Factory[]>> registry = NumismaticVillagerTradesRegistry.getRegistryForLoading();
-        TradeOffers.PROFESSION_TO_LEVELED_TRADE.putAll(registry.getLeft());
-
-        if (!registry.getRight().isEmpty()) {
-            TradeOffers.WANDERING_TRADER_TRADES.clear();
-            TradeOffers.WANDERING_TRADER_TRADES.putAll(registry.getRight());
-        }
-
+    public CompletableFuture<Void> reload(SharedState sharedState, Executor prepareExecutor, PreparationBarrier barrier, Executor applyExecutor) {
+        NumismaticOverhaul.LOGGER.warn("[Numismatic Overhaul] Villager trades are data-driven in MC 26.2. Custom trade registration not yet implemented.");
+        return CompletableFuture.completedFuture(null);
     }
 }

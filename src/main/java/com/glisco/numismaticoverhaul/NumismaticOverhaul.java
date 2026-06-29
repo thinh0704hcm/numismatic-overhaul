@@ -6,41 +6,47 @@ import com.glisco.numismaticoverhaul.item.*;
 import com.glisco.numismaticoverhaul.network.*;
 import com.glisco.numismaticoverhaul.villagers.data.VillagerTradesResourceListener;
 import com.glisco.numismaticoverhaul.villagers.json.VillagerTradesHandler;
-import io.wispforest.owo.itemgroup.Icon;
-import io.wispforest.owo.itemgroup.OwoItemGroup;
-import io.wispforest.owo.itemgroup.gui.ItemGroupButton;
-import io.wispforest.owo.network.OwoNetChannel;
-import io.wispforest.owo.ops.LootOps;
-import io.wispforest.owo.particles.ClientParticles;
-import io.wispforest.owo.particles.systems.ParticleSystem;
-import io.wispforest.owo.particles.systems.ParticleSystemController;
-import io.wispforest.owo.registration.reflect.FieldRegistrationHandler;
+
+
+
+import net.minecraft.world.item.CreativeModeTab;
+
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.chat.Component;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
-import net.fabricmc.fabric.api.gamerule.v1.GameRuleFactory;
-import net.fabricmc.fabric.api.gamerule.v1.GameRuleRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+
+
 import net.fabricmc.fabric.api.loot.v3.LootTableEvents;
-import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
-import net.minecraft.block.Block;
-import net.minecraft.component.ComponentType;
-import net.minecraft.entity.EntityType;
-import net.minecraft.loot.LootPool;
-import net.minecraft.loot.LootTables;
-import net.minecraft.loot.condition.RandomChanceLootCondition;
-import net.minecraft.loot.entry.LootPoolEntryType;
-import net.minecraft.particle.BlockStateParticleEffect;
-import net.minecraft.particle.ParticleTypes;
-import net.minecraft.registry.*;
-import net.minecraft.registry.tag.TagKey;
-import net.minecraft.resource.ResourceType;
-import net.minecraft.resource.featuretoggle.FeatureFlags;
-import net.minecraft.screen.ScreenHandlerType;
+import net.fabricmc.fabric.api.resource.v1.ResourceLoader;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.core.component.DataComponentType;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.level.storage.loot.LootPool;
+import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.world.level.storage.loot.BuiltInLootTables;
+import net.minecraft.world.level.storage.loot.entries.LootItem;
+import net.minecraft.world.level.storage.loot.predicates.LootItemRandomChanceCondition;
+
+
+import net.minecraft.core.registries.*;
+import net.minecraft.core.Registry;
+import net.minecraft.tags.TagKey;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.world.flag.FeatureFlagSet;
+import net.minecraft.world.inventory.MenuType;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.sound.SoundEvent;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.GameRules;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.storage.loot.LootTable;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.level.gamerules.GameRule;
+import net.fabricmc.fabric.api.gamerule.v1.GameRuleBuilder;
+import net.minecraft.world.level.gamerules.GameRuleCategory;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import java.util.HashMap;
@@ -51,43 +57,34 @@ public class NumismaticOverhaul implements ModInitializer {
     public static final String MOD_ID = "numismatic-overhaul";
     public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
 
-    public static final OwoNetChannel CHANNEL = OwoNetChannel.create(id("main"));
-    private static final ParticleSystemController PARTICLE_SYSTEMS = new ParticleSystemController(id("particles"));
-    public static final ParticleSystem<Integer> PIGGY_BANK_BROKEN = PARTICLE_SYSTEMS.register(Integer.class, (world, pos, data) -> {
-        ClientParticles.setParticleCount(6 * data);
-        ClientParticles.randomizeVelocity(2);
-        ClientParticles.spawnCenteredOnBlock(
-            new BlockStateParticleEffect(ParticleTypes.BLOCK, NumismaticOverhaulBlocks.PIGGY_BANK.getDefaultState()),
-            world, new BlockPos((int) pos.x, (int) pos.y, (int) pos.z), .75
-        );
-    });
 
-    public static final ScreenHandlerType<ShopScreenHandler> SHOP_SCREEN_HANDLER_TYPE = new ScreenHandlerType<>(ShopScreenHandler::new, FeatureFlags.DEFAULT_ENABLED_FEATURES);
-    public static final ScreenHandlerType<PiggyBankScreenHandler> PIGGY_BANK_SCREEN_HANDLER_TYPE = new ScreenHandlerType<>(PiggyBankScreenHandler::new, FeatureFlags.DEFAULT_ENABLED_FEATURES);
+    public static final MenuType<ShopScreenHandler> SHOP_SCREEN_HANDLER_TYPE = new MenuType<>(ShopScreenHandler::new, FeatureFlagSet.of());
+    public static final MenuType<PiggyBankScreenHandler> PIGGY_BANK_SCREEN_HANDLER_TYPE = new MenuType<>(PiggyBankScreenHandler::new, FeatureFlagSet.of());
 
-    public static final SoundEvent PIGGY_BANK_BREAK = SoundEvent.of(id("piggy_bank_break"));
-    public static final LootPoolEntryType MONEY_BAG_ENTRY = new LootPoolEntryType(MoneyBagLootEntry.CODEC);
+    public static final SoundEvent PIGGY_BANK_BREAK = SoundEvent.createVariableRangeEvent(id("piggy_bank_break"));
+    // MONEY_BAG_ENTRY registration removed (loot type unrolling in 26.2)
 
-    public static final TagKey<EntityType<?>> THE_BOURGEOISIE = TagKey.of(RegistryKeys.ENTITY_TYPE, id("the_bourgeoisie"));
-    public static final TagKey<Block> VERY_HEAVY_BLOCKS = TagKey.of(RegistryKeys.BLOCK, id("very_heavy_blocks"));
+    public static final TagKey<EntityType<?>> THE_BOURGEOISIE = TagKey.create(Registries.ENTITY_TYPE, id("the_bourgeoisie"));
+    public static final TagKey<Block> VERY_HEAVY_BLOCKS = TagKey.create(Registries.BLOCK, id("very_heavy_blocks"));
 
-    public static final GameRules.Key<GameRules.IntRule> MONEY_DROP_PERCENTAGE
-        = GameRuleRegistry.register("moneyDropPercentage", GameRules.Category.PLAYER, GameRuleFactory.createIntRule(10, 0, 100));
+    public static final GameRule<Integer> MONEY_DROP_PERCENTAGE
+        = GameRuleBuilder.forInteger(10).category(GameRuleCategory.PLAYER).range(0, 100).buildAndRegister(id("money_drop_percentage"));
 
-    public static final GameRules.Key<GameRules.IntRule> MONEY_MOB_DROP_VARIANCE
-        = GameRuleRegistry.register("moneyMobDropVariancePercentage", GameRules.Category.MOBS, GameRuleFactory.createIntRule(50, 0, 100));
+    public static final GameRule<Integer> MONEY_MOB_DROP_VARIANCE
+        = GameRuleBuilder.forInteger(50).category(GameRuleCategory.MOBS).range(0, 100).buildAndRegister(id("money_mob_drop_variance_percentage"));
 
-    public static final ComponentType<MoneyBagComponent> MONEY_BAG_COMPONENT = MoneyBagComponent.register();
+    public static final DataComponentType<MoneyBagComponent> MONEY_BAG_COMPONENT = MoneyBagComponent.register();
 
-    public static final OwoItemGroup NUMISMATIC_GROUP = OwoItemGroup.builder(
-            NumismaticOverhaul.id("main"),
-            () -> Icon.of(MoneyBagItem.fromRawValue(100)))
-        .initializer(group -> {
-            group.addButton(ItemGroupButton.modrinth(group, "https://modrinth.com/mod/numismatic-overhaul"));
-            group.addButton(ItemGroupButton.curseforge(group, "https://www.curseforge.com/minecraft/mc-mods/numismatic-overhaul"));
-            group.addButton(ItemGroupButton.github(group, "https://github.com/wisp-forest/numismatic-overhaul"));
-            group.addButton(ItemGroupButton.discord(group, "https://discord.gg/xrwHKktV2d"));
-        }).build();
+    public static final CreativeModeTab NUMISMATIC_GROUP = CreativeModeTab.builder(CreativeModeTab.Row.TOP, 6)
+        .icon(() -> new ItemStack(NumismaticOverhaulItems.GOLD_COIN))
+        .title(Component.translatable("itemGroup.numismatic-overhaul.general"))
+        .displayItems((params, output) -> {
+            output.accept(NumismaticOverhaulItems.BRONZE_COIN);
+            output.accept(NumismaticOverhaulItems.SILVER_COIN);
+            output.accept(NumismaticOverhaulItems.GOLD_COIN);
+            output.accept(NumismaticOverhaulItems.MONEY_BAG);
+        })
+        .build();
 
     public static final Map<EntityType<?>, Integer> MOBS_IN_BOURGEOISIE = new HashMap<>();
 
@@ -96,23 +93,25 @@ public class NumismaticOverhaul implements ModInitializer {
     @Override
     public void onInitialize() {
         // this type of code truly feels like DH code
+        ServerLifecycleEvents.SERVER_STARTING.register(server -> ModComponents.init(server.getWorldPath(LevelResource.ROOT)));
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> ModComponents.saveAll());
         ServerLifecycleEvents.SERVER_STARTED.register(NumismaticOverhaul::loadMobDropConfig);
 
-        FieldRegistrationHandler.register(NumismaticOverhaulItems.class, MOD_ID, false);
-        FieldRegistrationHandler.register(NumismaticOverhaulBlocks.class, MOD_ID, false);
-        FieldRegistrationHandler.register(NumismaticOverhaulBlocks.Entities.class, MOD_ID, false);
+        // Register items and blocks manually
+        NumismaticOverhaulItems.register();
+        NumismaticOverhaulBlocks.register();
 
-        Registry.register(Registries.SOUND_EVENT, PIGGY_BANK_BREAK.getId(), PIGGY_BANK_BREAK);
-        Registry.register(Registries.LOOT_POOL_ENTRY_TYPE, id("money_bag"), MONEY_BAG_ENTRY);
+        Registry.register(BuiltInRegistries.SOUND_EVENT, PIGGY_BANK_BREAK.location(), PIGGY_BANK_BREAK);
+        Registry.register(BuiltInRegistries.LOOT_POOL_ENTRY_TYPE, id("money_bag"), MoneyBagLootEntry.CODEC); // Fixed registration for MC 26.2
 
-        Registry.register(Registries.SCREEN_HANDLER, id("shop"), SHOP_SCREEN_HANDLER_TYPE);
-        Registry.register(Registries.SCREEN_HANDLER, id("piggy_bank"), PIGGY_BANK_SCREEN_HANDLER_TYPE);
+        Registry.register(BuiltInRegistries.MENU, id("shop"), SHOP_SCREEN_HANDLER_TYPE);
+        Registry.register(BuiltInRegistries.MENU, id("piggy_bank"), PIGGY_BANK_SCREEN_HANDLER_TYPE);
 
-        CHANNEL.registerServerbound(RequestPurseActionC2SPacket.class, RequestPurseActionC2SPacket::handle);
-        CHANNEL.registerServerbound(ShopScreenHandlerRequestC2SPacket.class, ShopScreenHandlerRequestC2SPacket::handle);
-        UpdateShopScreenS2CPacket.initialize();
+        ServerPlayNetworking.registerGlobalReceiver(RequestPurseActionC2SPacket.ID, RequestPurseActionC2SPacket::handle);
+        ServerPlayNetworking.registerGlobalReceiver(ShopScreenHandlerRequestC2SPacket.ID, ShopScreenHandlerRequestC2SPacket::handle);
 
-        ResourceManagerHelper.get(ResourceType.SERVER_DATA).registerReloadListener(new VillagerTradesResourceListener());
+
+        ResourceLoader.get(PackType.SERVER_DATA).registerReloadListener(NumismaticOverhaul.id("villager_trades"), new VillagerTradesResourceListener());
         VillagerTradesHandler.registerDefaultAdapters();
 
         CommandRegistrationCallback.EVENT.register(NumismaticCommand::register);
@@ -122,25 +121,38 @@ public class NumismaticOverhaul implements ModInitializer {
             CONFIG.subscribeToMobsToBaseValues(NumismaticOverhaul::reloadMobDropConfig);
         });
 
-        NUMISMATIC_GROUP.initialize();
+        Registry.register(BuiltInRegistries.CREATIVE_MODE_TAB, id("main"), NUMISMATIC_GROUP);
 
         if (CONFIG.generateCurrencyInChests()) {
-            LootOps.injectItem(NumismaticOverhaulItems.GOLD_COIN, .01f, LootTables.STRONGHOLD_LIBRARY_CHEST.getValue(), LootTables.BASTION_TREASURE_CHEST.getValue(), LootTables.STRONGHOLD_CORRIDOR_CHEST.getValue(),
-                LootTables.PILLAGER_OUTPOST_CHEST.getValue(), LootTables.BURIED_TREASURE_CHEST.getValue(), LootTables.SIMPLE_DUNGEON_CHEST.getValue(), LootTables.ABANDONED_MINESHAFT_CHEST.getValue());
+            LootTableEvents.MODIFY.register((key, tableBuilder, source, registries) -> {
+                if (anyMatch(key.identifier(),
+                    BuiltInLootTables.STRONGHOLD_LIBRARY.identifier(),
+                    BuiltInLootTables.BASTION_TREASURE.identifier(),
+                    BuiltInLootTables.STRONGHOLD_CORRIDOR.identifier(),
+                    BuiltInLootTables.PILLAGER_OUTPOST.identifier(),
+                    BuiltInLootTables.BURIED_TREASURE.identifier(),
+                    BuiltInLootTables.SIMPLE_DUNGEON.identifier(),
+                    BuiltInLootTables.ABANDONED_MINESHAFT.identifier())) {
+                     tableBuilder.pool(LootPool.lootPool()
+                         .add(LootItem.lootTableItem(NumismaticOverhaulItems.GOLD_COIN)
+                             .when(LootItemRandomChanceCondition.randomChance(0.01f)))
+                         .build());
+                }
+            });
 
             LootTableEvents.MODIFY.register((key, tableBuilder, source, registries) -> {
-                if (anyMatch(key.getValue(), LootTables.DESERT_PYRAMID_CHEST.getValue())) {
-                    tableBuilder.pool(LootPool.builder().with(MoneyBagLootEntry.builder(CONFIG.lootOptions.desertMinLoot(), CONFIG.lootOptions.desertMaxLoot()))
-                        .conditionally(RandomChanceLootCondition.builder(0.45f)));
-                } else if (anyMatch(key.getValue(), LootTables.SIMPLE_DUNGEON_CHEST.getValue(), LootTables.ABANDONED_MINESHAFT_CHEST.getValue())) {
-                    tableBuilder.pool(LootPool.builder().with(MoneyBagLootEntry.builder(CONFIG.lootOptions.dungeonMinLoot(), CONFIG.lootOptions.dungeonMaxLoot()))
-                        .conditionally(RandomChanceLootCondition.builder(0.75f)));
-                } else if (anyMatch(key.getValue(), LootTables.BASTION_TREASURE_CHEST.getValue(), LootTables.STRONGHOLD_CORRIDOR_CHEST.getValue(), LootTables.PILLAGER_OUTPOST_CHEST.getValue(), LootTables.BURIED_TREASURE_CHEST.getValue())) {
-                    tableBuilder.pool(LootPool.builder().with(MoneyBagLootEntry.builder(CONFIG.lootOptions.structureMinLoot(), CONFIG.lootOptions.structureMaxLoot()))
-                        .conditionally(RandomChanceLootCondition.builder(0.75f)));
-                } else if (anyMatch(key.getValue(), LootTables.STRONGHOLD_LIBRARY_CHEST.getValue())) {
-                    tableBuilder.pool(LootPool.builder().with(MoneyBagLootEntry.builder(CONFIG.lootOptions.strongholdLibraryMinLoot(), CONFIG.lootOptions.strongholdLibraryMaxLoot()))
-                        .conditionally(RandomChanceLootCondition.builder(0.85f)));
+                if (anyMatch(key.identifier(), BuiltInLootTables.DESERT_PYRAMID.identifier())) {
+                    tableBuilder.pool(LootPool.lootPool().add(MoneyBagLootEntry.builder(CONFIG.lootOptions().desertMinLoot(), CONFIG.lootOptions().desertMaxLoot()))
+                        .when(LootItemRandomChanceCondition.randomChance(0.45f)).build());
+                } else if (anyMatch(key.identifier(), BuiltInLootTables.SIMPLE_DUNGEON.identifier(), BuiltInLootTables.ABANDONED_MINESHAFT.identifier())) {
+                    tableBuilder.pool(LootPool.lootPool().add(MoneyBagLootEntry.builder(CONFIG.lootOptions().dungeonMinLoot(), CONFIG.lootOptions().dungeonMaxLoot()))
+                        .when(LootItemRandomChanceCondition.randomChance(0.75f)).build());
+                } else if (anyMatch(key.identifier(), BuiltInLootTables.BASTION_TREASURE.identifier(), BuiltInLootTables.STRONGHOLD_CORRIDOR.identifier(), BuiltInLootTables.PILLAGER_OUTPOST.identifier(), BuiltInLootTables.BURIED_TREASURE.identifier())) {
+                    tableBuilder.pool(LootPool.lootPool().add(MoneyBagLootEntry.builder(CONFIG.lootOptions().structureMinLoot(), CONFIG.lootOptions().structureMaxLoot()))
+                        .when(LootItemRandomChanceCondition.randomChance(0.75f)).build());
+                } else if (anyMatch(key.identifier(), BuiltInLootTables.STRONGHOLD_LIBRARY.identifier())) {
+                    tableBuilder.pool(LootPool.lootPool().add(MoneyBagLootEntry.builder(CONFIG.lootOptions().strongholdLibraryMinLoot(), CONFIG.lootOptions().strongholdLibraryMaxLoot()))
+                        .when(LootItemRandomChanceCondition.randomChance(0.85f)).build());
                 }
             });
         }
@@ -154,20 +166,18 @@ public class NumismaticOverhaul implements ModInitializer {
     }
 
     public static Identifier id(String path) {
-        return Identifier.of(MOD_ID, path);
+        return Identifier.fromNamespaceAndPath(MOD_ID, path);
     }
 
     private static void loadMobDropConfig(MinecraftServer ignored) {
         CONFIG.mobsToBaseValues().forEach((s, baseValue) -> {
             if (s.startsWith("#")) {
-                Registries.ENTITY_TYPE.getEntryList(TagKey.of(RegistryKeys.ENTITY_TYPE, Identifier.of(s.split("#")[1]))).ifPresentOrElse(registryEntries -> {
-                    registryEntries.forEach(entityTypeRegistryEntry -> MOBS_IN_BOURGEOISIE.put(entityTypeRegistryEntry.value(), baseValue));
-                }, () -> {
-                    LOGGER.error("[Numismatic Overhaul] Could not find entity type for tag '{}' when applying mob drops", s);
-                });
+                for (var holder : BuiltInRegistries.ENTITY_TYPE.getTagOrEmpty(TagKey.create(Registries.ENTITY_TYPE, Identifier.parse(s.split("#")[1])))) {
+                    MOBS_IN_BOURGEOISIE.put(holder.value(), baseValue);
+                }
             } else {
-                var entityOpt = Registries.ENTITY_TYPE.getOrEmpty(Identifier.of(s));
-                entityOpt.ifPresentOrElse(entityType -> MOBS_IN_BOURGEOISIE.put(entityType, baseValue), () -> {
+                var entityOpt = BuiltInRegistries.ENTITY_TYPE.get(Identifier.parse(s));
+                entityOpt.ifPresentOrElse(ref -> MOBS_IN_BOURGEOISIE.put(ref.value(), baseValue), () -> {
                     LOGGER.error("[Numismatic Overhaul] Could not find entity type '{}' when applying mob drops", s);
                 });
             }
@@ -176,7 +186,7 @@ public class NumismaticOverhaul implements ModInitializer {
 
     private static void reloadMobDropConfig(Map<String, Integer> ignored) {
         MOBS_IN_BOURGEOISIE.clear();
-        CONFIG.load();
+        // CONFIG.load(); // removed for MC 26.2
         loadMobDropConfig(null);
     }
 }
